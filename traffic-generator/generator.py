@@ -30,10 +30,9 @@ if __name__ == "__main__":
     dist = os.environ.get("DISTRIBUTION", "deterministic").lower() #por defecto "deterministic", cambiar por "poisson" para probar otra distribución
     interval = 1.0 / rate
 
-print(f"Generador funcionando a: rate={rate} evt/s, con una distribución={dist}")
+    print(f"Generador funcionando a: rate={rate} evt/s, con una distribución={dist}")
 
-
-while True:
+    while True:
         alert = make_random_alert()
         
         try:
@@ -42,16 +41,10 @@ while True:
 
         except Exception as e:
             print("Error al enviar", e)
-        time.sleep(interval)
-
-
-
+        
         if dist == "poisson":
-
             interval = random.expovariate(rate)
         else:
-
             interval = 1.0 / rate
-
 
         time.sleep(interval) 
