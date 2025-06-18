@@ -12,39 +12,68 @@ Este proyecto despliega, mediante Docker Compose, un flujo de procesamiento de e
 7.	Kibana: interfaz web para visualización y análisis de datos en Elasticsearch.
 8.	Visores para administración: mongo-express en el puerto 8081 y redis-commander en el 8082.
 
-
 Cabe mencionar que el presente fue diseñado con vibe coding en un sistema con macOS 14.4.3.
 
-
 # Instrucciones de arranque
+
+## Opción 1: Usando el script de gestión (Recomendado)
+1.	Clonar o descargar el repositorio.
+2.	Ejecutar el script de gestión:
+
+    ```bash
+    # Inicia todos los servicios
+    ./manage.sh up
+    
+    # Para detener y limpiar completamente
+    ./manage.sh down
+    
+    # Para reiniciar todo
+    ./manage.sh restart
+    
+    # Para limpieza completa (contenedores, imágenes, volúmenes)
+    ./manage.sh clean
+    
+    # Para ver el estado de los servicios
+    ./manage.sh status
+    
+    # Para ver logs de todos los servicios o uno específico
+    ./manage.sh logs [nombre_servicio]
+    ```
+
+## Opción 2: Usando Docker Compose directamente
 1.	Clonar o descargar el repositorio.	
 2.	Ejecutar:
 
-    ```powershell
+    ```bash
+    # Limpia y detiene todos los contenedores
+    docker-compose down --remove-orphans
     
-	docker-compose down --volumes  # limpia datos previos
-	docker-compose up -d          # construye y arranca todos los servicios
-
+    # Construye y arranca todos los servicios
+    docker-compose up -d
     ```
-
 
 3.	Verificar servicios corriendo:
 
-    ```powershell
+    ```bash
+    docker-compose ps
+    ```
 
-	docker-compose ps
-	
- 	```
- 
-4.	Acceder a los visores y servicios:
+## Acceso a los servicios
+- **Mongo Express** → http://localhost:8081 (Administrador de MongoDB)
+- **Redis Commander** → http://localhost:8082 (Administrador de Redis)  
+- **Elasticsearch** → http://localhost:9200 (API REST)
+- **Kibana** → http://localhost:5601 (Visualización de datos)
 
-   
-	Mongo Express → http://localhost:8081
-	Redis Commander → http://localhost:8082
-	Kibana → http://localhost:5601
+**Nota importante**: Elasticsearch puede tardar hasta 30-60 segundos en iniciar completamente. Kibana esperará a que Elasticsearch esté saludable antes de iniciar.
 
+## Para detener todos los servicios
 
-5.	Tipos de consultas para Apache Pig
+```bash
+# Usando el script de gestión
+./manage.sh down
+
+# O usando Docker Compose directamente
+docker-compose down --remove-orphans
 
    	- Filtro de incidentes por comuna
     ```powershell

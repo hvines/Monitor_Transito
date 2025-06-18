@@ -1,9 +1,8 @@
-# version: '3.8'
-
 services:
   mongodb:
     image: mongo:6.0
-    restart: always
+    container_name: mongodb
+    restart: unless-stopped
     environment:
       MONGO_INITDB_ROOT_USERNAME: root
       MONGO_INITDB_ROOT_PASSWORD: example
@@ -22,7 +21,8 @@ services:
 
   mongo-express:
     image: mongo-express:latest
-    restart: always
+    container_name: mongo-express
+    restart: unless-stopped
 
     depends_on:
       - mongodb
@@ -40,7 +40,8 @@ services:
   redis-commander:
     image: rediscommander/redis-commander:latest
     platform: linux/amd64
-    restart: always
+    container_name: redis-commander
+    restart: unless-stopped
     depends_on:
       -  redis
         #condition: service_healthy
@@ -54,7 +55,8 @@ services:
 
   redis:
       image: redis:7.0
-      restart: always
+      container_name: redis
+      restart: unless-stopped
       ports:
         - "6379:6379"
       networks:
@@ -69,6 +71,8 @@ services:
     build:
       context: ./scraper
       dockerfile: Dockerfile
+    container_name: waze-scraper
+    restart: unless-stopped
     depends_on:
         - mongodb
         - redis
@@ -82,7 +86,8 @@ services:
     build:
       context: ./traffic-generator
       dockerfile: Dockerfile
-    container_name: traffic_generator
+    container_name: traffic-generator
+    restart: unless-stopped
     depends_on:
       - mongodb
       - redis
@@ -99,7 +104,8 @@ services:
       context: ./pig
       dockerfile: Dockerfile
     image: my_pig:latest
-    container_name: pig_ds
+    container_name: pig-ds
+    restart: unless-stopped
     depends_on:
       - mongodb     
     environment:
@@ -126,6 +132,7 @@ services:
       context: ./elasticsearch
       dockerfile: Dockerfile
     container_name: elasticsearch
+    restart: unless-stopped
     environment:
       - node.name=elasticsearch
       - cluster.name=waze-cluster
@@ -151,6 +158,7 @@ services:
       context: ./kibana
       dockerfile: Dockerfile
     container_name: kibana
+    restart: unless-stopped
     depends_on:
       elasticsearch:
         condition: service_healthy
