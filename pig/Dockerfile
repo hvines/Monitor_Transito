@@ -44,7 +44,8 @@ ENV PIG_HOME=/opt/pig
 ENV PATH=$PATH:$PIG_HOME/bin
 
 # Instalar dependencias de Python
-RUN pip3 install pymongo
+COPY requirements.txt /scripts/
+RUN pip3 install -r /scripts/requirements.txt
 
 # Crear directorios
 RUN mkdir -p /data/raw /data/processed /scripts

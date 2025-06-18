@@ -7,8 +7,10 @@ Este proyecto despliega, mediante Docker Compose, un flujo de procesamiento de e
 2.	MongoDB: base de datos NoSQL que almacena dichos eventos para luego pasar a su sistema de caché.
 3.	Caché (Redis): almacena el último lote de eventos durante 10 segundos para consultas rápidas.
 4.	Generador de tráfico: simula llegadas de eventos con dos distribuciones (determinista y Poisson).
-5.	Visores para administración: mongo-express en el puerto 8081 y redis-commander en el 8082.
-6.	Apache PIG: filtrado y procesamiento de datos
+5.	Apache PIG: filtrado y procesamiento de datos.
+6.	Elasticsearch: motor de búsqueda y análisis para indexar eventos procesados.
+7.	Kibana: interfaz web para visualización y análisis de datos en Elasticsearch.
+8.	Visores para administración: mongo-express en el puerto 8081 y redis-commander en el 8082.
 
 
 Cabe mencionar que el presente fue diseñado con vibe coding en un sistema con macOS 14.4.3.
@@ -34,10 +36,12 @@ Cabe mencionar que el presente fue diseñado con vibe coding en un sistema con m
 	
  	```
  
-4.	Acceder a los visores:
+4.	Acceder a los visores y servicios:
 
    
-	Mongo Express → http://localhost:8081 y Redis Commander → http://localhost:8082
+	Mongo Express → http://localhost:8081
+	Redis Commander → http://localhost:8082
+	Kibana → http://localhost:5601
 
 
 5.	Tipos de consultas para Apache Pig
@@ -74,6 +78,21 @@ Cabe mencionar que el presente fue diseñado con vibe coding en un sistema con m
 
 	
  	```
+
+6.	Exportación de datos a Elasticsearch
+
+   	- Exportar eventos procesados de MongoDB a Elasticsearch
+    ```powershell
+
+	docker exec -it pig_ds python3 /scripts/export_to_elasticsearch.py
+	
+ 	```
+
+7.	Análisis y visualización
+
+   	- Acceder a Kibana → http://localhost:5601
+   	- Crear index patterns para visualizar los datos
+   	- Generar dashboards y visualizaciones personalizadas
 
 
 
