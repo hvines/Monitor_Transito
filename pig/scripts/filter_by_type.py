@@ -26,7 +26,7 @@ def filter_by_type(event_type):
         print(f"Total documentos en la colección: {total_docs}")
         
         if total_docs == 0:
-            print("⚠️  No hay documentos en la colección")
+            print("ADVERTENCIA: No hay documentos en la coleccion")
             return
 
         # Buscar por tipo (case insensitive)
@@ -37,7 +37,7 @@ def filter_by_type(event_type):
         print(f"Documentos de tipo '{event_type}': {matching_docs}")
         
         if matching_docs == 0:
-            print(f"⚠️  No se encontraron eventos de tipo '{event_type}'")
+            print(f"ADVERTENCIA: No se encontraron eventos de tipo '{event_type}'")
             # Mostrar algunos tipos de ejemplo
             sample_docs = collection.find({}, {"type": 1}).limit(10)
             print("Ejemplos de tipos en la base de datos:")
@@ -78,8 +78,8 @@ def filter_by_type(event_type):
                 if count % 50 == 0:
                     print(f"  Procesados: {count} eventos...")
 
-        print(f"✅ CSV exportado exitosamente: {output_path}")
-        print(f"✅ Total eventos filtrados: {count}")
+        print(f"CSV exportado exitosamente: {output_path}")
+        print(f"Total eventos filtrados: {count}")
         
         # Mostrar primeros eventos como muestra
         print(f"\n=== MUESTRA DE EVENTOS TIPO {event_type} ===")
@@ -94,7 +94,7 @@ def filter_by_type(event_type):
         return count
         
     except Exception as e:
-        print(f"❌ Error: {e}")
+        print(f"ERROR: {e}")
         return 0
 
 def get_all_types():
@@ -128,7 +128,7 @@ def get_all_types():
         return True
         
     except Exception as e:
-        print(f"❌ Error: {e}")
+        print(f"ERROR: {e}")
         return False
 
 def export_all_types_unified():
@@ -149,7 +149,7 @@ def export_all_types_unified():
         print(f"Total documentos en la colección: {total_docs}")
         
         if total_docs == 0:
-            print("⚠️  No hay documentos en la colección")
+            print("ADVERTENCIA: No hay documentos en la coleccion")
             return
 
         # Obtener todos los tipos únicos primero
@@ -198,10 +198,10 @@ def export_all_types_unified():
                     type_exported += 1
                     total_exported += 1
                 
-                print(f"    ✅ {type_exported} eventos de tipo {event_type} exportados")
+                print(f"    {type_exported} eventos de tipo {event_type} exportados")
 
-        print(f"\n✅ CSV unificado exportado exitosamente: {output_path}")
-        print(f"✅ Total eventos exportados: {total_exported}")
+        print(f"\nCSV unificado exportado exitosamente: {output_path}")
+        print(f"Total eventos exportados: {total_exported}")
         
         # Resumen por tipo
         print(f"\n=== RESUMEN POR TIPO ===")
@@ -214,7 +214,7 @@ def export_all_types_unified():
         return total_exported
         
     except Exception as e:
-        print(f"❌ Error: {e}")
+        print(f"ERROR: {e}")
         return 0
 
 if __name__ == "__main__":

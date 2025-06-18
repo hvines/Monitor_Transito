@@ -77,8 +77,6 @@ services:
         REDIS_HOST: redis
     networks:
         - my-network
-    ports:
-        - "5001:5000"
 
   traffic-generator:
     build:
@@ -86,10 +84,11 @@ services:
       dockerfile: Dockerfile
     container_name: traffic_generator
     depends_on:
-      waze-scraper:
-        condition: service_started
+      - mongodb
+      - redis
     environment:
-      GENERATOR_API_URL: http://waze-scraper:5000/ingest
+      MONGO_URI: "mongodb://root:example@mongodb:27017/?authSource=admin"
+      REDIS_HOST: redis
       EVENTS_PER_SEC: 10
       DISTRIBUTION: deterministic
     networks:

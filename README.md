@@ -39,9 +39,9 @@ Cabe mencionar que el presente fue diseñado con vibe coding en un sistema con m
 4.	Acceder a los visores y servicios:
 
    
-//	Mongo Express → http://localhost:8081
-//	Redis Commander → http://localhost:8082
-//	Kibana → http://localhost:5601
+	Mongo Express → http://localhost:8081
+	Redis Commander → http://localhost:8082
+	Kibana → http://localhost:5601
 
 
 5.	Tipos de consultas para Apache Pig
@@ -91,7 +91,8 @@ Cabe mencionar que el presente fue diseñado con vibe coding en un sistema con m
 7.	Análisis y visualización
 
    	- Acceder a Kibana → http://localhost:5601
-   	- Generar dashboards
+   	- Crear index patterns para visualizar los datos
+   	- Generar dashboards y visualizaciones personalizadas
 
 
 

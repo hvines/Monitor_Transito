@@ -44,12 +44,12 @@ def export_to_elasticsearch():
         try:
             # Verificar conexión obteniendo info del cluster
             cluster_info = es.cluster.health()
-            print(f"✅ Conexión a Elasticsearch exitosa. Estado: {cluster_info['status']}")
+            print(f"Conexion a Elasticsearch exitosa. Estado: {cluster_info['status']}")
         except Exception as ping_error:
-            print(f"❌ Error al conectar a Elasticsearch: {ping_error}")
+            print(f"Error al conectar a Elasticsearch: {ping_error}")
             return False
         
-        print("✅ Conexiones establecidas")
+        print("Conexiones establecidas")
         
         # Preparar documentos para bulk insert
         def generate_docs():
@@ -98,22 +98,22 @@ def export_to_elasticsearch():
             from elasticsearch.helpers import BulkIndexError
             success_count, failed_items = bulk(es, generate_docs(), chunk_size=100, raise_on_error=False)
             
-            print(f"✅ Exportación completada")
+            print(f"Exportacion completada")
             print(f"Documentos exportados: {success_count}")
             
             if failed_items:
-                print(f"⚠️  Documentos fallidos: {len(failed_items)}")
+                print(f"ADVERTENCIA: Documentos fallidos: {len(failed_items)}")
                 # Mostrar algunos errores para debug
                 for i, failed_item in enumerate(failed_items[:3]):
                     print(f"Error {i+1}: {failed_item}")
         except BulkIndexError as bulk_error:
-            print(f"❌ Error en bulk insert: {bulk_error}")
+            print(f"ERROR en bulk insert: {bulk_error}")
             # Mostrar errores específicos
             for error in bulk_error.errors[:3]:
                 print(f"Bulk error detail: {error}")
             return False
         except Exception as bulk_error:
-            print(f"❌ Error general en bulk insert: {bulk_error}")
+            print(f"ERROR general en bulk insert: {bulk_error}")
             return False
         
         # Verificar el índice en Elasticsearch
@@ -124,7 +124,7 @@ def export_to_elasticsearch():
         return True
         
     except Exception as e:
-        print(f"❌ Error durante la exportación: {e}")
+        print(f"ERROR durante la exportacion: {e}")
         return False
     
     finally:

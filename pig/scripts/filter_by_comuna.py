@@ -26,7 +26,7 @@ def filter_by_comuna(comuna_name):
         print(f"Total documentos en la colección: {total_docs}")
         
         if total_docs == 0:
-            print("⚠️  No hay documentos en la colección")
+            print("ADVERTENCIA: No hay documentos en la coleccion")
             return
 
         # CORRECCIÓN: Usar "city" (minúscula) consistentemente
@@ -37,7 +37,7 @@ def filter_by_comuna(comuna_name):
         print(f"Documentos que contienen '{comuna_name}' en city: {matching_docs}")
         
         if matching_docs == 0:
-            print(f"⚠️  No se encontraron eventos para la comuna '{comuna_name}'")
+            print(f"ADVERTENCIA: No se encontraron eventos para la comuna '{comuna_name}'")
             # CORRECCIÓN: Usar "city" (minúscula)
             sample_docs = collection.find({}, {"city": 1}).limit(5)
             print("Ejemplos de ciudades en la base de datos:")
@@ -77,8 +77,8 @@ def filter_by_comuna(comuna_name):
                 if count % 100 == 0:
                     print(f"  Procesados: {count} eventos...")
 
-        print(f"✅ CSV exportado exitosamente: {output_path}")
-        print(f"✅ Total eventos filtrados: {count}")
+        print(f"CSV exportado exitosamente: {output_path}")
+        print(f"Total eventos filtrados: {count}")
         
         # Mostrar primeros eventos como muestra
         print("\n=== MUESTRA DE EVENTOS FILTRADOS ===")
@@ -95,7 +95,7 @@ def filter_by_comuna(comuna_name):
         return count
         
     except Exception as e:
-        print(f"❌ Error: {e}")
+        print(f"ERROR: {e}")
         return 0
 
 def get_all_cities():
@@ -129,7 +129,7 @@ def get_all_cities():
         return True
         
     except Exception as e:
-        print(f"❌ Error: {e}")
+        print(f"ERROR: {e}")
         return False
 
 if __name__ == "__main__":

@@ -22,7 +22,7 @@ def analyze_frequency():
         print(f"Total documentos en la colección: {total_docs}")
         
         if total_docs == 0:
-            print("⚠️  No hay documentos en la colección")
+            print("ADVERTENCIA: No hay documentos en la coleccion")
             return
 
         print("Analizando frecuencia de tipos de incidentes...")
@@ -119,21 +119,21 @@ def analyze_frequency():
         print(f"\n=== RESUMEN DE FRECUENCIAS ===")
         print(f"Total de eventos analizados: {total_docs}")
         
-        print(f"\n📊 TOP 5 TIPOS DE INCIDENTES:")
+        print(f"\nTOP 5 TIPOS DE INCIDENTES:")
         for i, result in enumerate(type_results[:5], 1):
             event_type = result["_id"]
             count = result["count"]
             percentage = (count / total_docs) * 100
             print(f"  {i}. {event_type}: {count} eventos ({percentage:.2f}%)")
         
-        print(f"\n🏙️  TOP 5 CIUDADES CON MÁS INCIDENTES:")
+        print(f"\nTOP 5 CIUDADES CON MAS INCIDENTES:")
         for i, result in enumerate(city_results[:5], 1):
             city = result["_id"]
             count = result["count"]
             percentage = (count / total_docs) * 100
             print(f"  {i}. {city}: {count} eventos ({percentage:.2f}%)")
         
-        print(f"\n🔥 TOP 5 COMBINACIONES TIPO-CIUDAD:")
+        print(f"\nTOP 5 COMBINACIONES TIPO-CIUDAD:")
         for i, result in enumerate(combined_results[:5], 1):
             event_type = result["_id"]["type"]
             city = result["_id"]["city"]
@@ -141,7 +141,7 @@ def analyze_frequency():
             percentage = (count / total_docs) * 100
             print(f"  {i}. {event_type} en {city}: {count} eventos ({percentage:.2f}%)")
         
-        print(f"\n✅ Archivos de frecuencia exportados:")
+        print(f"\nArchivos de frecuencia exportados:")
         print(f"  - {output_path_type}")
         print(f"  - {output_path_city}")
         print(f"  - {output_path_combined}")
@@ -149,7 +149,7 @@ def analyze_frequency():
         return len(type_results)
         
     except Exception as e:
-        print(f"❌ Error: {e}")
+        print(f"ERROR: {e}")
         return 0
 
 def analyze_frequency_by_type(event_type):
@@ -173,7 +173,7 @@ def analyze_frequency_by_type(event_type):
         print(f"Total eventos de tipo '{event_type}': {total_type}")
         
         if total_type == 0:
-            print(f"⚠️  No se encontraron eventos de tipo '{event_type}'")
+            print(f"ADVERTENCIA: No se encontraron eventos de tipo '{event_type}'")
             return
         
         # Análisis por ciudad para este tipo
@@ -207,18 +207,18 @@ def analyze_frequency_by_type(event_type):
                 writer.writerow(row)
         
         # Mostrar resumen
-        print(f"\n📊 DISTRIBUCIÓN DE {event_type} POR CIUDAD:")
+        print(f"\nDISTRIBUCION DE {event_type} POR CIUDAD:")
         for i, result in enumerate(results, 1):
             city = result["_id"]
             count = result["count"]
             percentage = (count / total_type) * 100
             print(f"  {i}. {city}: {count} eventos ({percentage:.2f}%)")
         
-        print(f"\n✅ Archivo exportado: {output_path}")
+        print(f"\nArchivo exportado: {output_path}")
         return len(results)
         
     except Exception as e:
-        print(f"❌ Error: {e}")
+        print(f"ERROR: {e}")
         return 0
 
 if __name__ == "__main__":

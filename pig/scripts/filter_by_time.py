@@ -60,7 +60,7 @@ def filter_by_time_interval(start_time, end_time, event_type=None, city=None):
         print(f"Total documentos en la colección: {total_docs}")
         
         if total_docs == 0:
-            print("⚠️  No hay documentos en la colección")
+            print("ADVERTENCIA: No hay documentos en la coleccion")
             return
 
         # Construir query
@@ -90,7 +90,7 @@ def filter_by_time_interval(start_time, end_time, event_type=None, city=None):
         print(f"Documentos encontrados en el intervalo: {matching_docs}")
         
         if matching_docs == 0:
-            print("⚠️  No se encontraron eventos en el intervalo especificado")
+            print("ADVERTENCIA: No se encontraron eventos en el intervalo especificado")
             
             # Mostrar algunos timestamps de ejemplo para debugging
             sample_docs = collection.find({}, {"timestamp": 1}).limit(5)
@@ -143,8 +143,8 @@ def filter_by_time_interval(start_time, end_time, event_type=None, city=None):
                 if count % 50 == 0:
                     print(f"  Procesados: {count} eventos...")
 
-        print(f"✅ CSV exportado exitosamente: {output_path}")
-        print(f"✅ Total eventos filtrados: {count}")
+        print(f"CSV exportado exitosamente: {output_path}")
+        print(f"Total eventos filtrados: {count}")
         
         # Mostrar estadísticas del intervalo
         print(f"\n=== ESTADÍSTICAS DEL INTERVALO ===")
@@ -168,7 +168,7 @@ def filter_by_time_interval(start_time, end_time, event_type=None, city=None):
         return count
         
     except Exception as e:
-        print(f"❌ Error: {e}")
+        print(f"ERROR: {e}")
         return 0
 
 def show_time_range():
@@ -204,24 +204,24 @@ def show_time_range():
             min_time = min(valid_timestamps)
             max_time = max(valid_timestamps)
             
-            print(f"📅 RANGO TEMPORAL DETECTADO:")
+            print(f"RANGO TEMPORAL DETECTADO:")
             print(f"  Evento más antiguo: {min_time}")
             print(f"  Evento más reciente: {max_time}")
             print(f"  Duración total: {max_time - min_time}")
             
             # Sugerir algunos intervalos de ejemplo
-            print(f"\n💡 EJEMPLOS DE INTERVALOS PARA FILTRAR:")
+            print(f"\nEJEMPLOS DE INTERVALOS PARA FILTRAR:")
             print(f"  1 hora desde el primer evento:")
             print(f"    python3 filter_by_time.py '{min_time}' '{min_time + timedelta(hours=1)}'")
             print(f"  1 día desde el primer evento:")
             print(f"    python3 filter_by_time.py '{min_time}' '{min_time + timedelta(days=1)}'")
         else:
-            print("⚠️  No se pudieron parsear los timestamps")
+            print("ADVERTENCIA: No se pudieron parsear los timestamps")
         
         return True
         
     except Exception as e:
-        print(f"❌ Error: {e}")
+        print(f"ERROR: {e}")
         return False
 
 if __name__ == "__main__":
@@ -253,9 +253,9 @@ if __name__ == "__main__":
             filter_by_time_interval(start_time, end_time, event_type, city)
             
         except ValueError as e:
-            print(f"❌ Error en formato de fecha: {e}")
+            print(f"ERROR en formato de fecha: {e}")
             print("Formato requerido: 'YYYY-MM-DD HH:MM:SS'")
     
     else:
-        print("❌ Parámetros insuficientes")
+        print("ERROR: Parametros insuficientes")
         print("Usa --help para ver ejemplos de uso")
