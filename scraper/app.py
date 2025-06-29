@@ -3,12 +3,12 @@ import time
 import json
 import logging
 from pymongo import MongoClient
-import redis
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import signal
 import sys
+import pytz
 
 # Configuración de logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -29,6 +29,9 @@ class WazeScraperService:
         self.CYCLE_INTERVAL = 30  # reducir a 30 segundos entre ciclos
         self.CACHE_TTL = 10  # TTL de 10 segundos para latest_alerts
         
+        # Configurar timezone de Santiago
+        self.santiago_tz = pytz.timezone('America/Santiago')  # UTC-4 en horario estándar, UTC-3 en horario de verano
+        
         # Conexiones
         self.setup_connections()
         
@@ -37,25 +40,42 @@ class WazeScraperService:
         self.setup_signal_handlers()
 
     def setup_connections(self):
-        """Configurar conexiones a MongoDB y Redis"""
+        """Configurar conexión a MongoDB"""
         try:
             # MongoDB con autenticación
             self.mongo_client = MongoClient('mongodb://root:example@mongodb:27017/?authSource=admin')
             self.db = self.mongo_client.waze_db
             self.collection = self.db.events
             
-            # Redis
-            self.redis_client = redis.Redis(host='redis', port=6379, decode_responses=True)
-            
-            logger.info("Conexiones establecidas correctamente")
+            logger.info("Conexión a MongoDB establecida correctamente")
         except Exception as e:
-            logger.error(f"Error estableciendo conexiones: {e}")
+            logger.error(f"Error estableciendo conexión a MongoDB: {e}")
             raise
 
     def setup_signal_handlers(self):
         """Configurar manejadores de señales para shutdown limpio"""
         signal.signal(signal.SIGTERM, self.shutdown)
         signal.signal(signal.SIGINT, self.shutdown)
+
+    def convert_to_santiago_timezone(self, utc_datetime):
+        """Convertir datetime UTC a timezone de Santiago"""
+        try:
+            if utc_datetime.tzinfo is None:
+                # Asumir que es UTC si no tiene timezone info
+                utc_datetime = utc_datetime.replace(tzinfo=pytz.UTC)
+            elif utc_datetime.tzinfo != pytz.UTC:
+                # Convertir a UTC primero si tiene otro timezone
+                utc_datetime = utc_datetime.astimezone(pytz.UTC)
+            
+            # Convertir a timezone de Santiago
+            santiago_datetime = utc_datetime.astimezone(self.santiago_tz)
+            
+            # Retornar como datetime naive (sin timezone info) en hora local de Santiago
+            return santiago_datetime.replace(tzinfo=None)
+            
+        except Exception as e:
+            logger.warning(f"Error convirtiendo timestamp a timezone Santiago: {e}")
+            return utc_datetime
 
     def shutdown(self, signum, frame):
         """Shutdown limpio del servicio"""
@@ -113,13 +133,37 @@ class WazeScraperService:
                                 # Almacenar eventos tal como los recibe la API
                                 raw_events = data['alerts']
                                 
-                                # Solo agregar timestamp de procesamiento sin modificar estructura original
+                                # Procesar eventos con conversión de timezone
                                 processed_events = []
                                 for event in raw_events:
                                     # Crear copia del evento original
                                     processed_event = dict(event)
-                                    # Solo agregar campo de procesamiento
-                                    processed_event['_processed_at'] = datetime.utcnow()
+                                    
+                                    # Convertir timestamps a timezone de Santiago
+                                    now_utc = datetime.utcnow().replace(tzinfo=pytz.UTC)
+                                    processed_at_santiago = self.convert_to_santiago_timezone(now_utc)
+                                    processed_event['_processed_at'] = processed_at_santiago
+                                    
+                                    # Convertir pubMillis si existe (timestamp en milisegundos)
+                                    if 'pubMillis' in event:
+                                        try:
+                                            pub_timestamp_utc = datetime.fromtimestamp(event['pubMillis'] / 1000, tz=pytz.UTC)
+                                            pub_timestamp_santiago = self.convert_to_santiago_timezone(pub_timestamp_utc)
+                                            processed_event['pubMillis_santiago'] = pub_timestamp_santiago.isoformat()
+                                        except Exception as e:
+                                            logger.warning(f"Error convirtiendo pubMillis: {e}")
+                                    
+                                    # Convertir timestamps de comentarios si existen
+                                    if 'comments' in event and isinstance(event['comments'], list):
+                                        for comment in processed_event['comments']:
+                                            if 'reportMillis' in comment:
+                                                try:
+                                                    comment_timestamp_utc = datetime.fromtimestamp(comment['reportMillis'] / 1000, tz=pytz.UTC)
+                                                    comment_timestamp_santiago = self.convert_to_santiago_timezone(comment_timestamp_utc)
+                                                    comment['reportMillis_santiago'] = comment_timestamp_santiago.isoformat()
+                                                except Exception as e:
+                                                    logger.warning(f"Error convirtiendo comentario timestamp: {e}")
+                                    
                                     processed_events.append(processed_event)
                                 
                                 events.extend(processed_events)
@@ -190,41 +234,13 @@ class WazeScraperService:
             logger.error(f"Error almacenando en MongoDB: {e}")
             return 0
 
-    def update_redis_cache(self, events):
-        """Actualizar caché Redis con TTL de 10 segundos"""
-        if not events:
-            return
-            
-        try:
-            logger.info(f"Actualizando caché Redis con {len(events)} eventos...")
-            start_time = time.time()
-            
-            # latest_alerts: TTL de 10 segundos para eventos ultra-frescos
-            latest_cache = {
-                'events': events,
-                'count': len(events),
-                'last_updated': datetime.utcnow().isoformat(),
-                'type': 'latest'
-            }
-            
-            self.redis_client.setex(
-                'latest_alerts', 
-                self.CACHE_TTL, 
-                json.dumps(latest_cache, default=str)
-            )
-            
-            elapsed_time = time.time() - start_time
-            if elapsed_time > self.SYNC_TIMEOUT:
-                logger.warning(f"Actualización Redis tomó {elapsed_time:.2f}s (>{self.SYNC_TIMEOUT}s)")
-                
-            logger.info(f"Redis: Caché actualizado en {elapsed_time:.2f}s (TTL: {self.CACHE_TTL}s)")
-            
-        except Exception as e:
-            logger.error(f"Error actualizando Redis: {e}")
-
     def synchronized_data_pipeline(self, events):
-        """Pipeline sincronizado con timeouts para MongoDB y Redis"""
-        logger.info("Iniciando pipeline sincronizado...")
+        """Pipeline sincronizado solo para MongoDB"""
+        logger.info("Iniciando pipeline para MongoDB...")
+        
+        # Solo almacenar en MongoDB - Redis será manejado por el query cache
+        mongodb_result = self.store_events_mongodb(events)
+        logger.info(f"Pipeline completado: {mongodb_result} eventos almacenados en MongoDB")
         
         with ThreadPoolExecutor(max_workers=2) as executor:
             # Ejecutar MongoDB y Redis en paralelo

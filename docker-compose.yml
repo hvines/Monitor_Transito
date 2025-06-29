@@ -47,6 +47,11 @@ services:
         #condition: service_healthy
     environment:
       REDIS_HOSTS: local:redis:6379
+      NO_LOG_DATA: "true"
+      REDIS_CONNECTION_TIMEOUT: 5000
+      REDIS_COMMAND_TIMEOUT: 5000
+      READ_ONLY: "false"
+      USE_SCAN: "true"
     ports:
       - "8082:8081"
     networks:
@@ -75,57 +80,43 @@ services:
     restart: unless-stopped
     depends_on:
         - mongodb
-        - redis
     environment:
         MONGO_URI: "mongodb://root:example@mongodb:27017/?authSource=admin"
-        REDIS_HOST: redis
     networks:
         - my-network
 
-  traffic-generator:
+  raw-exporter:
     build:
-      context: ./traffic-generator
+      context: ./raw-exporter
       dockerfile: Dockerfile
-    container_name: traffic-generator
+    container_name: raw-exporter
     restart: unless-stopped
     depends_on:
-      - mongodb
-      - redis
+        - mongodb
+        - elasticsearch
     environment:
-      MONGO_URI: "mongodb://root:example@mongodb:27017/?authSource=admin"
-      REDIS_HOST: redis
-      EVENTS_PER_SEC: 10
-      DISTRIBUTION: deterministic
+        MONGO_URI: "mongodb://root:example@mongodb:27017/?authSource=admin"
+        ES_HOST: "elasticsearch:9200"
     networks:
-      - my-network
+        - my-network
 
   pig:
     build:
       context: ./pig
       dockerfile: Dockerfile
-    image: my_pig:latest
-    container_name: pig-ds
+    image: pig_auto_processor:latest
+    container_name: pig-auto-processor
     restart: unless-stopped
     depends_on:
-      - mongodb     
+      - mongodb
+      - elasticsearch
     environment:
       MONGO_URI: "mongodb://root:example@mongodb:27017/?authSource=admin"
-      MONGO_DBNAME: "waze_alertas"
-      MONGO_COLLNAME: "eventos"
-      PROXIMITY_THRESHOLD_METERS: 500
-      TIME_WINDOW_MINUTES: 15
-      OUTPUT_FORMAT: "csv"
-      ENABLE_TEMPORAL_ANALYSIS: "true"
-      ENABLE_GEOGRAPHIC_GROUPING: "true"      
+      ES_HOST: "elasticsearch:9200"
     volumes:
-      - mongo_export:/data/raw      
       - pig_output:/data/processed
-      - ./pig/scripts:/scripts
     networks:
-      - my-network
-    stdin_open: true
-    tty: true
-    command: tail -f /dev/null  
+      - my-network  
 
   elasticsearch:
     build:
@@ -153,6 +144,30 @@ services:
       timeout: 10s
       retries: 5
 
+  query-cache:
+    build:
+      context: ./query-cache
+      dockerfile: Dockerfile
+    container_name: query-cache
+    restart: unless-stopped
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      - ES_HOST=elasticsearch:9200
+      - REDIS_HOST=redis:6379
+    ports:
+      - "9201:9201"
+    networks:
+      - my-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9201/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
   kibana:
     build:
       context: ./kibana
@@ -162,8 +177,10 @@ services:
     depends_on:
       elasticsearch:
         condition: service_healthy
+      query-cache:
+        condition: service_healthy
     environment:
-      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+      - ELASTICSEARCH_HOSTS=http://query-cache:9201
       - xpack.security.enabled=false
     ports:
       - "5601:5601"
