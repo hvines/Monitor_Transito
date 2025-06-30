@@ -1,4 +1,4 @@
-# pig/Dockerfile - Simplified for field filtering and processing
+# pig/Dockerfile - Simplified for auto-processing
 
 FROM python:3.11
 
@@ -11,14 +11,13 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Crear directorios
 RUN mkdir -p /data/raw /data/processed /scripts
 
-# Copiar scripts y el processor
+# Copiar scripts y el auto-processor
 COPY scripts/ /scripts/
-COPY data_inspector.py .
-COPY waze-processed-events.py .
+COPY pig_auto_processor.py .
 
 # Variables de entorno
 ENV MONGO_URI="mongodb://root:example@mongodb:27017/?authSource=admin"
 ENV ES_HOST="elasticsearch:9200"
 
-# Comando por defecto - ejecutar el processor
-CMD ["python", "waze-processed-events.py"]
+# Comando por defecto - ejecutar el auto-processor
+CMD ["python", "pig_auto_processor.py"]

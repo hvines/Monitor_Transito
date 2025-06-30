@@ -43,10 +43,9 @@ services:
     container_name: redis-commander
     restart: unless-stopped
     depends_on:
-      -  redis
-        #condition: service_healthy
+      - redis
     environment:
-      REDIS_HOSTS: local:redis:6379
+      REDIS_HOSTS: local:consultas_cache:6379
       NO_LOG_DATA: "true"
       REDIS_CONNECTION_TIMEOUT: 5000
       REDIS_COMMAND_TIMEOUT: 5000
@@ -59,18 +58,24 @@ services:
 
 
   redis:
-      image: redis:7.0
-      container_name: redis
-      restart: unless-stopped
-      ports:
-        - "6379:6379"
-      networks:
-        - my-network
-      healthcheck:
-        test: ["CMD", "redis-cli", "ping"]
-        interval: 10s
-        timeout: 5s
-        retries: 5
+    build:
+      context: ./redis
+      dockerfile: Dockerfile
+    container_name: consultas_cache
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+      - "9201:9201"
+    environment:
+      - ES_HOST=elasticsearch:9200
+      - REDIS_HOST=localhost:6379
+    networks:
+      - my-network
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping && curl -f http://localhost:9201/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
 
   waze-scraper:
     build:
@@ -82,21 +87,6 @@ services:
         - mongodb
     environment:
         MONGO_URI: "mongodb://root:example@mongodb:27017/?authSource=admin"
-    networks:
-        - my-network
-
-  raw-exporter:
-    build:
-      context: ./raw-exporter
-      dockerfile: Dockerfile
-    container_name: raw-exporter
-    restart: unless-stopped
-    depends_on:
-        - mongodb
-        - elasticsearch
-    environment:
-        MONGO_URI: "mongodb://root:example@mongodb:27017/?authSource=admin"
-        ES_HOST: "elasticsearch:9200"
     networks:
         - my-network
 
@@ -144,30 +134,6 @@ services:
       timeout: 10s
       retries: 5
 
-  query-cache:
-    build:
-      context: ./query-cache
-      dockerfile: Dockerfile
-    container_name: query-cache
-    restart: unless-stopped
-    depends_on:
-      elasticsearch:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    environment:
-      - ES_HOST=elasticsearch:9200
-      - REDIS_HOST=redis:6379
-    ports:
-      - "9201:9201"
-    networks:
-      - my-network
-    healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:9201/health || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-
   kibana:
     build:
       context: ./kibana
@@ -177,10 +143,10 @@ services:
     depends_on:
       elasticsearch:
         condition: service_healthy
-      query-cache:
+      redis:
         condition: service_healthy
     environment:
-      - ELASTICSEARCH_HOSTS=http://query-cache:9201
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
       - xpack.security.enabled=false
     ports:
       - "5601:5601"

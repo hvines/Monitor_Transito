@@ -14,10 +14,10 @@ WORKDIR /consultas_cache
 
 # Copiar requirements e instalar dependencias Python
 COPY requirements.txt .
-RUN pip3 install --break-system-packages --no-cache-dir -r requirements.txt
+RUN pip3 install --no-cache-dir -r requirements.txt
 
 # Copiar código fuente del servicio de caché
-COPY consultas_cache.py ./consultas_cache.py
+COPY app.py ./consultas_cache.py
 
 # Crear configuración de supervisor para ejecutar ambos servicios
 RUN mkdir -p /etc/supervisor/conf.d
