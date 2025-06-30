@@ -45,7 +45,7 @@ services:
     depends_on:
       - redis
     environment:
-      REDIS_HOSTS: local:consultas_cache:6379
+      REDIS_HOSTS: local:redis-cache:6379
       NO_LOG_DATA: "true"
       REDIS_CONNECTION_TIMEOUT: 5000
       REDIS_COMMAND_TIMEOUT: 5000
@@ -61,18 +61,14 @@ services:
     build:
       context: ./redis
       dockerfile: Dockerfile
-    container_name: consultas_cache
+    container_name: redis-cache
     restart: unless-stopped
     ports:
       - "6379:6379"
-      - "9201:9201"
-    environment:
-      - ES_HOST=elasticsearch:9200
-      - REDIS_HOST=localhost:6379
     networks:
       - my-network
     healthcheck:
-      test: ["CMD-SHELL", "redis-cli ping && curl -f http://localhost:9201/health || exit 1"]
+      test: ["CMD-SHELL", "redis-cli ping || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5

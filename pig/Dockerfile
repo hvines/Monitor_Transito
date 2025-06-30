@@ -12,13 +12,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 RUN mkdir -p /data/raw /data/processed /scripts
 
 # Copiar scripts y el processor
-COPY scripts/ /scripts/
 COPY data_inspector.py .
-COPY waze-processed-events.py .
+COPY pig_auto_processor.py .
 
 # Variables de entorno
 ENV MONGO_URI="mongodb://root:example@mongodb:27017/?authSource=admin"
 ENV ES_HOST="elasticsearch:9200"
 
 # Comando por defecto - ejecutar el processor
-CMD ["python", "waze-processed-events.py"]
+CMD ["python", "pig_auto_processor.py"]

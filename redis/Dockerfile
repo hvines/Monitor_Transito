@@ -1,56 +1,18 @@
-# Redis + Consultas Cache Service
-FROM redis:7.0
+# Redis Service - Simplified
+FROM redis:7.0-alpine
 
-# Instalar Python y dependencias
-RUN apt-get update && apt-get install -y \
-    python3 \
-    python3-pip \
-    curl \
-    supervisor \
-    && rm -rf /var/lib/apt/lists/*
+# Instalar curl para health checks
+RUN apk add --no-cache curl
 
-# Crear directorio de trabajo para el servicio de cache
-WORKDIR /consultas_cache
+# Copiar configuración de Redis
+COPY redis.conf /usr/local/etc/redis/redis.conf
 
-# Copiar requirements e instalar dependencias Python
-COPY requirements.txt .
-RUN pip3 install --break-system-packages --no-cache-dir -r requirements.txt
+# Exponer puerto estándar de Redis
+EXPOSE 6379
 
-# Copiar código fuente del servicio de caché
-COPY consultas_cache.py ./consultas_cache.py
+# Health check simple
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+    CMD redis-cli ping || exit 1
 
-# Crear configuración de supervisor para ejecutar ambos servicios
-RUN mkdir -p /etc/supervisor/conf.d
-
-# Configuración de supervisor
-COPY <<EOF /etc/supervisor/conf.d/supervisord.conf
-[supervisord]
-nodaemon=true
-user=root
-
-[program:redis]
-command=redis-server --bind 0.0.0.0 --port 6379
-autostart=true
-autorestart=true
-stderr_logfile=/var/log/redis.err.log
-stdout_logfile=/var/log/redis.out.log
-
-[program:consultas_cache]
-command=python3 /consultas_cache/consultas_cache.py
-directory=/consultas_cache
-autostart=true
-autorestart=true
-stderr_logfile=/var/log/consultas_cache.err.log
-stdout_logfile=/var/log/consultas_cache.out.log
-environment=ES_HOST="elasticsearch:9200",REDIS_HOST="localhost:6379"
-EOF
-
-# Healthcheck para ambos servicios
-HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
-    CMD redis-cli ping && curl -f http://localhost:9201/health || exit 1
-
-# Exponer puertos
-EXPOSE 6379 9201
-
-# Comando por defecto usando supervisor
-CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
+# Comando por defecto
+CMD ["redis-server", "/usr/local/etc/redis/redis.conf"]

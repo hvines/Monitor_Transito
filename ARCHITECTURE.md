@@ -103,31 +103,20 @@ Este documento describe la arquitectura completa del sistema de procesamiento de
   - Health monitoring integrado
   - API REST completa
 
-### 6. Query Cache Service
-**Función**: Proxy inteligente con caché Redis
-- **Tecnología**: Flask con Redis integration
-- **Puerto**: 9201
-- **Características**:
-  - Proxy transparente hacia Elasticsearch
-  - Caché inteligente con TTL configurable (10s)
-  - Enriquecimiento de respuestas
-  - Métricas de cache hit/miss
-  - Health check endpoint
-  - Soporte para consultas multi-índice
-
-### 7. Redis
+### 6. Redis
 **Función**: Sistema de caché para optimización de consultas
 - **Tecnología**: Redis 7.0
-- **Uso**: Caché de resultados de consultas Elasticsearch
-- **Configuración**:
-  - TTL: 10 segundos (configurable)
-  - Persistent storage opcional
-  - Clustering ready
+- **Puerto**: 6379
+- **Características**:
+  - Caché de datos para optimización de consultas
+  - Configuración persistente
+  - Health monitoring integrado
+  - Soporte para clustering si es necesario
 
-### 8. Kibana
+### 7. Kibana
 **Función**: Interfaz de visualización y análisis
 - **Tecnología**: Kibana 8.x
-- **Conexión**: A través del Query Cache Service (puerto 9201)
+- **Conexión**: Directamente a Elasticsearch (puerto 9200)
 - **Características**:
   - Dashboards comparativos
   - Index patterns para ambos índices
@@ -135,7 +124,7 @@ Este documento describe la arquitectura completa del sistema de procesamiento de
   - Time-series analysis
   - Alerting capabilities
 
-### 9. Herramientas de Administración
+### 8. Herramientas de Administración
 **Mongo Express**: Interfaz web para MongoDB (puerto 8081)
 **Redis Commander**: Interfaz web para Redis (puerto 8082)
 
@@ -174,7 +163,7 @@ Elasticsearch (waze-processed-events)
 ```
 Kibana (Frontend)
     ↓ (Elasticsearch API calls)
-Query Cache Service (Proxy:9201)
+Query Cache Service (Proxy:9200)
     ↓ (Cache check in Redis)
 Redis Cache ←→ Elasticsearch (Backend:9200)
     ↓ (Results with enhancement)
@@ -211,7 +200,7 @@ Response to Kibana
 - 8081: Mongo Express
 - 8082: Redis Commander
 - 9200: Elasticsearch (directo)
-- 9201: Query Cache Service
+- 9200: Query Cache Service
 
 **Red Interna**: `my-network` (bridge)
 

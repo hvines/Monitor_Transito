@@ -41,7 +41,7 @@ Sistema-Distribuidos/
 - **Mongo Express**: http://localhost:8081 (admin MongoDB)
 - **Redis Commander**: http://localhost:8082 (admin Redis)
 - **Elasticsearch**: http://localhost:9200 (API directa)
-- **Query Cache**: http://localhost:9201 (proxy con caché)
+- **Query Cache**: http://localhost:9200 (proxy con caché)
 
 ## 🎯 Flujo Completo del Pipeline
 
@@ -93,11 +93,11 @@ docker-compose up -d --build
 ### Consultas de Ejemplo
 ```bash
 # Contar eventos en cada índice
-curl "http://localhost:9201/waze-raw-events/_count"
-curl "http://localhost:9201/waze-processed-events/_count"
+curl "http://localhost:9200/waze-raw-events/_count"
+curl "http://localhost:9200/waze-processed-events/_count"
 
 # Comparar tipos de eventos
-curl -X POST "http://localhost:9201/_all/_search" \
+curl -X POST "http://localhost:9200/_all/_search" \
   -H "Content-Type: application/json" \
   -d '{"size": 0, "aggs": {"by_index": {"terms": {"field": "_index"}, "aggs": {"types": {"terms": {"field": "type.keyword"}}}}}}'
 ```
@@ -170,7 +170,7 @@ curl -X POST "http://localhost:9201/_all/_search" \
 
 # Si caché no funciona
 ./manage.sh logs query-cache     # Verificar proxy
-curl http://localhost:9201/health # Health check
+curl http://localhost:9200/health # Health check
 ```
 
 ## 📚 Documentación Completa

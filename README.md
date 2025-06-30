@@ -1,4 +1,4 @@
-# Sistema de Procesamiento de Eventos de Tráfico Waze
+# Sistema de Procesamiento de Eventos de Tráfico con Waze
 
 ## Descripción General
 

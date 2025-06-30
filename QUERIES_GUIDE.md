@@ -15,19 +15,19 @@ Datos procesados por PIG con filtros aplicados.
 #### Contar eventos en cada índice
 ```bash
 # Eventos raw
-curl -X GET "http://localhost:9201/waze-raw-events/_count"
+curl -X GET "http://localhost:9200/waze-raw-events/_count"
 
 # Eventos procesados
-curl -X GET "http://localhost:9201/waze-processed-events/_count"
+curl -X GET "http://localhost:9200/waze-processed-events/_count"
 
 # Todos los eventos
-curl -X GET "http://localhost:9201/_all/_count"
+curl -X GET "http://localhost:9200/_all/_count"
 ```
 
 #### Obtener eventos recientes
 ```bash
 # Últimos 10 eventos raw
-curl -X POST "http://localhost:9201/waze-raw-events/_search" \
+curl -X POST "http://localhost:9200/waze-raw-events/_search" \
   -H "Content-Type: application/json" \
   -d '{
     "size": 10,
@@ -35,7 +35,7 @@ curl -X POST "http://localhost:9201/waze-raw-events/_search" \
   }'
 
 # Últimos 10 eventos procesados
-curl -X POST "http://localhost:9201/waze-processed-events/_search" \
+curl -X POST "http://localhost:9200/waze-processed-events/_search" \
   -H "Content-Type: application/json" \
   -d '{
     "size": 10,
@@ -48,7 +48,7 @@ curl -X POST "http://localhost:9201/waze-processed-events/_search" \
 #### Comparar distribución por tipo de evento
 ```bash
 # Raw events por tipo
-curl -X POST "http://localhost:9201/waze-raw-events/_search" \
+curl -X POST "http://localhost:9200/waze-raw-events/_search" \
   -H "Content-Type: application/json" \
   -d '{
     "size": 0,
@@ -63,7 +63,7 @@ curl -X POST "http://localhost:9201/waze-raw-events/_search" \
   }'
 
 # Processed events por tipo
-curl -X POST "http://localhost:9201/waze-processed-events/_search" \
+curl -X POST "http://localhost:9200/waze-processed-events/_search" \
   -H "Content-Type: application/json" \
   -d '{
     "size": 0,
@@ -80,7 +80,7 @@ curl -X POST "http://localhost:9201/waze-processed-events/_search" \
 
 #### Comparar distribución temporal (por hora)
 ```bash
-curl -X POST "http://localhost:9201/_all/_search" \
+curl -X POST "http://localhost:9200/_all/_search" \
   -H "Content-Type: application/json" \
   -d '{
     "size": 0,
@@ -105,7 +105,7 @@ curl -X POST "http://localhost:9201/_all/_search" \
 #### Buscar eventos específicos en ambos índices
 ```bash
 # Buscar eventos de tipo JAM en ambos índices
-curl -X POST "http://localhost:9201/_all/_search" \
+curl -X POST "http://localhost:9200/_all/_search" \
   -H "Content-Type: application/json" \
   -d '{
     "query": {
@@ -128,7 +128,7 @@ curl -X POST "http://localhost:9201/_all/_search" \
 #### Eventos por ubicación (raw vs procesados)
 ```bash
 # Distribución geográfica en datos raw
-curl -X POST "http://localhost:9201/waze-raw-events/_search" \
+curl -X POST "http://localhost:9200/waze-raw-events/_search" \
   -H "Content-Type: application/json" \
   -d '{
     "size": 0,
@@ -143,7 +143,7 @@ curl -X POST "http://localhost:9201/waze-raw-events/_search" \
   }'
 
 # Distribución por comuna en datos procesados (si aplica)
-curl -X POST "http://localhost:9201/waze-processed-events/_search" \
+curl -X POST "http://localhost:9200/waze-processed-events/_search" \
   -H "Content-Type: application/json" \
   -d '{
     "size": 0,
@@ -163,15 +163,15 @@ curl -X POST "http://localhost:9201/waze-processed-events/_search" \
 #### Verificar estadísticas del cache
 ```bash
 # Health check del query cache service
-curl -X GET "http://localhost:9201/health"
+curl -X GET "http://localhost:9200/health"
 
 # Realizar consulta para generar cache
-curl -X POST "http://localhost:9201/waze-raw-events/_search" \
+curl -X POST "http://localhost:9200/waze-raw-events/_search" \
   -H "Content-Type: application/json" \
   -d '{"size": 1}'
 
 # Repetir la misma consulta (debería usar cache)
-curl -X POST "http://localhost:9201/waze-raw-events/_search" \
+curl -X POST "http://localhost:9200/waze-raw-events/_search" \
   -H "Content-Type: application/json" \
   -d '{"size": 1}'
 ```
@@ -314,7 +314,7 @@ En Kibana (http://localhost:5601):
 
 #### Cache no funciona
 1. Verificar Redis: `docker exec redis redis-cli ping`
-2. Verificar query-cache: `curl http://localhost:9201/health`
+2. Verificar query-cache: `curl http://localhost:9200/health`
 3. Revisar logs: `docker-compose logs query-cache`
 
 #### Kibana no muestra datos
