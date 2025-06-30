@@ -1,4 +1,4 @@
-# Sistema de Procesamiento de Eventos de Tráfico con Waze
+# Sistema de Procesamiento de Eventos de Tráfico Waze
 
 ## Descripción General
 
@@ -6,10 +6,11 @@ Este proyecto despliega un pipeline de procesamiento de eventos de tráfico extr
 
 1. **Scraper**: Obtiene eventos de tráfico en tiempo real de la API de Waze y los almacena en MongoDB
 2. **MongoDB**: Base de datos NoSQL que almacena los eventos capturados del scraper
-3. **PIG**: Servicio de filtrado y procesamiento de datos desde MongoDB hacia Elasticsearch
-4. **Elasticsearch**: Motor de búsqueda para almacenar y consultar eventos procesados
-5. **Redis**: Sistema de caché para optimizar consultas
-6. **Kibana**: Interfaz web para visualización y análisis de datos
+3. **MongoDB-ES Connector**: Sincroniza datos brutos desde MongoDB hacia Elasticsearch
+4. **PIG**: Servicio de filtrado y procesamiento de datos desde MongoDB hacia Elasticsearch
+5. **Elasticsearch**: Motor de búsqueda con dos índices: `waze_bruto` (datos sin procesar) y `waze_procesados` (datos filtrados)
+6. **Redis**: Sistema de caché para optimizar consultas
+7. **Kibana**: Interfaz web para visualización y análisis comparativo de datos brutos vs procesados
 
 ## Instrucciones de Arranque
 

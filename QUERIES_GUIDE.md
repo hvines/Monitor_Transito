@@ -2,23 +2,32 @@
 
 ## Índices Disponibles
 
-### waze-raw-events
-Datos sin procesar directamente del scraper de Waze.
+### waze_bruto
+Datos sin procesar sincronizados directamente desde MongoDB.
 
-### waze-processed-events  
+### waze_procesados  
 Datos procesados por PIG con filtros aplicados.
 
 ## Consultas de Ejemplo
 
-### 1. Consultas Básicas via Query Cache Service
+### 1. Consultas Básicas
 
 #### Contar eventos en cada índice
 ```bash
-# Eventos raw
-curl -X GET "http://localhost:9200/waze-raw-events/_count"
+# Eventos brutos
+curl -X GET "http://localhost:9200/waze_bruto/_count"
 
 # Eventos procesados
-curl -X GET "http://localhost:9200/waze-processed-events/_count"
+curl -X GET "http://localhost:9200/waze_procesados/_count"
+
+# Todos los eventos
+curl -X GET "http://localhost:9200/_all/_count"
+```
+
+#### Obtener eventos recientes
+```bash
+# Últimos 10 eventos brutos
+curl -X POST "http://localhost:9200/waze_bruto/_search" \
 
 # Todos los eventos
 curl -X GET "http://localhost:9200/_all/_count"
@@ -27,7 +36,6 @@ curl -X GET "http://localhost:9200/_all/_count"
 #### Obtener eventos recientes
 ```bash
 # Últimos 10 eventos raw
-curl -X POST "http://localhost:9200/waze-raw-events/_search" \
   -H "Content-Type: application/json" \
   -d '{
     "size": 10,
@@ -35,7 +43,7 @@ curl -X POST "http://localhost:9200/waze-raw-events/_search" \
   }'
 
 # Últimos 10 eventos procesados
-curl -X POST "http://localhost:9200/waze-processed-events/_search" \
+curl -X POST "http://localhost:9200/waze_procesados/_search" \
   -H "Content-Type: application/json" \
   -d '{
     "size": 10,
@@ -48,7 +56,6 @@ curl -X POST "http://localhost:9200/waze-processed-events/_search" \
 #### Comparar distribución por tipo de evento
 ```bash
 # Raw events por tipo
-curl -X POST "http://localhost:9200/waze-raw-events/_search" \
   -H "Content-Type: application/json" \
   -d '{
     "size": 0,
@@ -63,7 +70,7 @@ curl -X POST "http://localhost:9200/waze-raw-events/_search" \
   }'
 
 # Processed events por tipo
-curl -X POST "http://localhost:9200/waze-processed-events/_search" \
+curl -X POST "http://localhost:9200/waze_procesados/_search" \
   -H "Content-Type: application/json" \
   -d '{
     "size": 0,
@@ -128,7 +135,6 @@ curl -X POST "http://localhost:9200/_all/_search" \
 #### Eventos por ubicación (raw vs procesados)
 ```bash
 # Distribución geográfica en datos raw
-curl -X POST "http://localhost:9200/waze-raw-events/_search" \
   -H "Content-Type: application/json" \
   -d '{
     "size": 0,
@@ -143,7 +149,7 @@ curl -X POST "http://localhost:9200/waze-raw-events/_search" \
   }'
 
 # Distribución por comuna en datos procesados (si aplica)
-curl -X POST "http://localhost:9200/waze-processed-events/_search" \
+curl -X POST "http://localhost:9200/waze_procesados/_search" \
   -H "Content-Type: application/json" \
   -d '{
     "size": 0,
@@ -166,12 +172,10 @@ curl -X POST "http://localhost:9200/waze-processed-events/_search" \
 curl -X GET "http://localhost:9200/health"
 
 # Realizar consulta para generar cache
-curl -X POST "http://localhost:9200/waze-raw-events/_search" \
   -H "Content-Type: application/json" \
   -d '{"size": 1}'
 
 # Repetir la misma consulta (debería usar cache)
-curl -X POST "http://localhost:9200/waze-raw-events/_search" \
   -H "Content-Type: application/json" \
   -d '{"size": 1}'
 ```
@@ -183,9 +187,8 @@ curl -X POST "http://localhost:9200/waze-raw-events/_search" \
 En Kibana (http://localhost:5601):
 
 1. Ir a **Stack Management > Index Patterns**
-2. Crear pattern para `waze-raw-events*`
    - Time field: `pubTimestamp`
-3. Crear pattern para `waze-processed-events*`
+3. Crear pattern para `waze_procesados*`
    - Time field: `pubTimestamp`
 
 ### 2. Visualizaciones Recomendadas
@@ -310,7 +313,6 @@ En Kibana (http://localhost:5601):
 #### No hay datos en índices
 1. Verificar scraper: `docker-compose logs waze-scraper`
 2. Verificar MongoDB: acceder via mongo-express
-3. Verificar exporters: `docker-compose logs raw-exporter pig`
 
 #### Cache no funciona
 1. Verificar Redis: `docker exec redis redis-cli ping`

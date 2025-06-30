@@ -26,7 +26,7 @@ class PigAutoProcessorService:
         # Configuración
         self.MONGO_URI = os.environ.get("MONGO_URI", "mongodb://root:example@mongodb:27017/?authSource=admin")
         self.ES_HOST = os.environ.get("ES_HOST", "elasticsearch:9200")
-        self.PROCESSED_INDEX = "waze-processed-events"
+        self.PROCESSED_INDEX = "waze_procesados"
         self.POLL_INTERVAL = 10  # segundos entre revisiones (más largo para procesamiento)
         self.BATCH_SIZE = 50     # menor batch size por el procesamiento
         
@@ -83,9 +83,8 @@ class PigAutoProcessorService:
                             "type": "geo_point"
                         },
                         "pubMillis": {"type": "date"},
-                        "pubMillis_santiago": {"type": "date"},
-                        "processed_at_chile": {"type": "date"},
-                        "pig_processed_at": {"type": "date"},
+                        "source_timestamp": {"type": "date"},
+                        "ingestion_timestamp": {"type": "date", "format": "strict_date_optional_time||epoch_millis"},
                         "reliability": {"type": "integer"},
                         "confidence": {"type": "integer"},
                         "nThumbsUp": {"type": "integer"},
@@ -211,8 +210,9 @@ class PigAutoProcessorService:
             filters_applied = ["type_priority", "location_zone", "time_category", "frequency_analysis"]
             processed_doc['processing_filters_applied'] = filters_applied
             
-            # 6. Agregar timestamp de procesamiento en Chile
-            processed_doc['pig_processed_at'] = now_chile.isoformat()
+            # 6. Agregar timestamp de procesamiento en Chile (para análisis local)
+            now_chile = self.get_chile_timestamp()
+            processed_doc['chile_processed_at'] = now_chile.isoformat()
             
             return processed_doc
             
@@ -243,28 +243,24 @@ class PigAutoProcessorService:
                         'lon': es_doc['location']['x']
                     }
             
-            # Convertir timestamps
-            if 'pubMillis' in es_doc and isinstance(es_doc['pubMillis'], (int, float)):
-                try:
-                    es_doc['pubMillis'] = datetime.fromtimestamp(
-                        es_doc['pubMillis'] / 1000, tz=timezone.utc
-                    ).isoformat()
-                except:
-                    pass
+            # ===== TIMESTAMPS (3 opciones como en MongoDB-ES Connector) =====
+            # 1. pubMillis - Mantener original para referencia
+            # (ya está copiado desde processed_doc)
             
-            # Convertir _processed_at a hora de Chile si existe
-            if '_processed_at' in es_doc:
+            # 2. source_timestamp - Conversión de pubMillis a formato ISO UTC
+            if 'pubMillis' in es_doc and es_doc['pubMillis']:
                 try:
-                    if hasattr(es_doc['_processed_at'], 'isoformat'):
-                        chile_time = self.get_chile_timestamp(es_doc['_processed_at'])
-                        es_doc['processed_at_chile'] = chile_time.isoformat()
-                    elif isinstance(es_doc['_processed_at'], str):
-                        # Intentar parsear string y convertir
-                        utc_time = datetime.fromisoformat(es_doc['_processed_at'].replace('Z', '+00:00'))
-                        chile_time = self.get_chile_timestamp(utc_time)
-                        es_doc['processed_at_chile'] = chile_time.isoformat()
-                except:
-                    pass
+                    # Convertir milisegundos a formato ISO (igual que connector)
+                    timestamp = datetime.fromtimestamp(
+                        es_doc['pubMillis'] / 1000,
+                        tz=timezone.utc
+                    )
+                    es_doc['source_timestamp'] = timestamp.isoformat()
+                except (ValueError, TypeError, OSError):
+                    logger.warning(f"Timestamp inválido en documento {mongo_doc['_id']}")
+            
+            # 3. ingestion_timestamp - Timestamp de procesamiento PIG
+            es_doc['ingestion_timestamp'] = datetime.now(timezone.utc).isoformat()
             
             return es_doc
             
@@ -278,7 +274,7 @@ class PigAutoProcessorService:
             query = {
                 "size": 1,
                 "sort": [
-                    {"pig_processed_at": {"order": "desc"}}
+                    {"ingestion_timestamp": {"order": "desc"}}
                 ],
                 "_source": ["mongo_id"]
             }

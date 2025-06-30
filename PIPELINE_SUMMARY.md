@@ -16,7 +16,6 @@ Sistema-Distribuidos/
 ├── 📄 QUERIES_GUIDE.md           # Guía de consultas y visualizaciones
 ├── 📄 ARCHITECTURE.md            # Documentación técnica completa
 ├── 🗂️ scraper/                   # Servicio Waze scraper (modificado)
-├── 🗂️ raw-exporter/              # Servicio exportador raw (NUEVO)
 ├── 🗂️ pig/                       # Servicio procesador PIG (modificado)
 ├── 🗂️ query-cache/               # Servicio proxy con caché (NUEVO)
 ├── 🗂️ elasticsearch/             # Configuración Elasticsearch
@@ -27,14 +26,20 @@ Sistema-Distribuidos/
 
 ### 🔧 Servicios del Pipeline
 
-1. **🕷️ Waze Scraper** - Ingesta datos reales de Waze → MongoDB
+1. **🕷️ Waze Scraper** - Ingesta datos reales de Waze → MongoDB (hora chilena preservada)
 2. **🍃 MongoDB** - Almacenamiento primario de eventos
-3. **📤 Raw Exporter** - Exporta datos sin procesar → Elasticsearch (waze-raw-events)
-4. **🐷 PIG Auto Processor** - Procesa y filtra datos → Elasticsearch (waze-processed-events)
-5. **🔍 Elasticsearch** - Motor de búsqueda con 2 índices separados
-6. **🗄️ Query Cache Service** - Proxy inteligente con caché Redis (TTL: 10s)
-7. **💾 Redis** - Sistema de caché para consultas
-8. **📊 Kibana** - Visualización comparativa de ambos índices
+3. **📤 MongoDB-ES Connector** - Sincroniza datos brutos → Elasticsearch (waze_bruto)
+4. **🐷 PIG Auto Processor** - Procesa y filtra datos → Elasticsearch (waze_procesados)
+5. **🔍 Elasticsearch** - Motor de búsqueda con 2 índices y 3 timestamps cada uno
+6. **💾 Redis** - Sistema de caché para consultas  
+7. **📊 Kibana** - Visualización comparativa de ambos índices
+
+### 📅 Gestión de Timestamps (3 opciones en ambos índices)
+- **`pubMillis`**: Timestamp original de Waze (mantenido como referencia)
+- **`source_timestamp`**: Conversión de pubMillis a formato ISO UTC 
+- **`ingestion_timestamp`**: Timestamp de procesamiento/sincronización
+
+**Referencia temporal**: Siempre se mantiene la hora chilena del scraper original
 
 ### 🌐 URLs de Acceso
 - **Kibana**: http://localhost:5601 (visualización)
@@ -46,16 +51,16 @@ Sistema-Distribuidos/
 ## 🎯 Flujo Completo del Pipeline
 
 ```
-Waze API → Scraper → MongoDB
-                        ↓
-                   Raw Exporter → Elasticsearch (waze-raw-events)
-                        ↓                           ↓
-                  PIG Processor → Elasticsearch (waze-processed-events)
-                                                  ↓
-                                        Query Cache Service
-                                         ↓         ↑
-                                    Kibana ←→ Redis Cache
+Waze API → Scraper → MongoDB (hora chilena preservada)
+                        ├─→ Mongo-ES Connector → Elasticsearch (waze_bruto)
+                        └─→ PIG Processor → Elasticsearch (waze_procesados)
+                                                    ↓
+                                            Kibana (análisis comparativo)
+                                                 ↑
+                                             Redis Cache
 ```
+
+**Timestamps consistentes**: Ambos índices mantienen los mismos 3 campos temporales para análisis comparativo preciso.
 
 ## 🚀 Comandos de Uso
 
@@ -93,31 +98,38 @@ docker-compose up -d --build
 ### Consultas de Ejemplo
 ```bash
 # Contar eventos en cada índice
-curl "http://localhost:9200/waze-raw-events/_count"
-curl "http://localhost:9200/waze-processed-events/_count"
+curl "http://localhost:9200/waze_bruto/_count"
+curl "http://localhost:9200/waze_procesados/_count"
 
-# Comparar tipos de eventos
+# Comparar timestamps entre índices
 curl -X POST "http://localhost:9200/_all/_search" \
   -H "Content-Type: application/json" \
-  -d '{"size": 0, "aggs": {"by_index": {"terms": {"field": "_index"}, "aggs": {"types": {"terms": {"field": "type.keyword"}}}}}}'
+  -d '{"size": 0, "aggs": {"by_index": {"terms": {"field": "_index"}, "aggs": {"timestamps": {"date_histogram": {"field": "source_timestamp", "calendar_interval": "hour"}}}}}}'
 ```
 
 ### En Kibana
-1. Crear index patterns: `waze-raw-events*` y `waze-processed-events*`
-2. Usar Discover para explorar diferencias
-3. Crear dashboards comparativos
-4. Visualizar en mapas geográficos
+1. Crear index patterns: `waze_bruto*` y `waze_procesados*`
+2. Configurar timestamps: usar `source_timestamp` como campo temporal principal
+3. Usar Discover para explorar diferencias temporales
+4. Crear dashboards comparativos con series temporales
+5. Visualizar en mapas geográficos con análisis temporal
 
 ## 🎨 Características Principales
 
 ### ✨ Nuevas Funcionalidades Implementadas
 - **Pipeline automático** sin intervención manual
-- **Exportación en tiempo real** de datos raw
+- **Sincronización directa** MongoDB → Elasticsearch para datos brutos
 - **Procesamiento automático** con filtros PIG
-- **Caché inteligente** para optimizar consultas
-- **Análisis comparativo** entre datos raw y procesados
+- **Timestamps consistentes** (3 opciones en ambos índices)
+- **Análisis temporal comparativo** entre datos brutos y procesados
 - **Monitoreo completo** con health checks
 - **Tests automatizados** del pipeline completo
+
+### 📅 Gestión Avanzada de Timestamps
+- **Coherencia temporal**: Los 3 timestamps están alineados entre `waze_bruto` y `waze_procesados`
+- **Referencia chilena**: El timestamp original del scraper (hora chilena) se preserva en todo el pipeline
+- **Análisis comparativo**: Permite comparar latencias entre ingesta bruta y procesamiento
+- **Flexibilidad de consulta**: 3 opciones de timestamp para diferentes tipos de análisis temporal
 
 ### 🔄 Eliminaciones y Mejoras
 - ❌ **Traffic Generator eliminado** (solo datos reales)
@@ -133,13 +145,11 @@ curl -X POST "http://localhost:9200/_all/_search" \
 - **Cache TTL**: 10 segundos (configurable en query-cache)
 - **Scraping interval**: 30-60 segundos
 - **Filtros PIG**: Tipo, zona, tiempo, frecuencia
-- **Índices ES**: waze-raw-events, waze-processed-events
 
 ### Archivos de Configuración
 - `kibana/kibana.yml` - Configurado para usar query-cache
 - `pig/pig_auto_processor.py` - Procesamiento automático
 - `query-cache/app.py` - Proxy con caché inteligente
-- `raw-exporter/app.py` - Exportación raw automática
 
 ## 📈 Monitoreo y Métricas
 
@@ -165,7 +175,6 @@ curl -X POST "http://localhost:9200/_all/_search" \
 
 # Si no hay datos
 ./manage.sh logs waze-scraper    # Verificar ingesta
-./manage.sh logs raw-exporter    # Verificar exportación raw
 ./manage.sh logs pig             # Verificar procesamiento
 
 # Si caché no funciona

@@ -7,23 +7,24 @@ Este documento describe la arquitectura completa del sistema de procesamiento de
 ## Arquitectura General
 
 ```
-┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐
-│   Waze API  │───▶│   Scraper   │───▶│   MongoDB   │───▶│Raw Exporter │
-└─────────────┘    └─────────────┘    └─────────────┘    └─────────────┘
-                                              │                    │
-                                              ▼                    │
-                                    ┌─────────────┐               │
-                                    │PIG Processor│               │
-                                    └─────────────┘               │
-                                              │                    │
-                                              ▼                    ▼
+┌─────────────┐    ┌─────────────┐    ┌─────────────┐
+│   Waze API  │───▶│   Scraper   │───▶│   MongoDB   │
+└─────────────┘    └─────────────┘    └─────────────┘
+                                              │
+                                              ├─────────────────┐
+                                              ▼                 ▼
+                                    ┌─────────────┐   ┌─────────────────┐
+                                    │PIG Processor│   │ Mongo-ES        │
+                                    └─────────────┘   │ Connector       │
+                                              │       └─────────────────┘
+                                              ▼                 │
                                     ┌─────────────────────────────────┐
                                     │        Elasticsearch            │
                                     │  ┌─────────────────────────────┐│
-                                    │  │    waze-processed-events    ││
+                                    │  │      waze_procesados        ││
                                     │  └─────────────────────────────┘│
                                     │  ┌─────────────────────────────┐│
-                                    │  │      waze-raw-events        ││
+                                    │  │        waze_bruto           ││
                                     │  └─────────────────────────────┘│
                                     └─────────────────────────────────┘
                                                     │
@@ -64,22 +65,23 @@ Este documento describe la arquitectura completa del sistema de procesamiento de
   - Autenticación configurada
   - Índices optimizados para consultas temporales y geográficas
 
-### 3. Raw Exporter
-**Función**: Exportación automática de datos sin procesar
-- **Tecnología**: Python con MongoWatch
-- **Monitoreo**: Change streams de MongoDB
-- **Destino**: Índice `waze-raw-events` en Elasticsearch
+### 3. MongoDB-Elasticsearch Connector
+**Función**: Sincronización directa de datos brutos
+- **Tecnología**: Python con polling directo
+- **Monitoreo**: Polling activo a MongoDB cada 15 segundos
+- **Destino**: Índice `waze_bruto` en Elasticsearch
 - **Características**:
-  - Exportación en tiempo real
-  - Conversión de tipos (geo-points, timestamps)
-  - Preservación de estructura original
+  - Sincronización automática en tiempo real
+  - Preservación completa de estructura original
+  - Conversión mínima de tipos (geo-points, timestamps)
   - Manejo de errores y reintentos
+  - Batch processing optimizado (100 docs/lote)
 
 ### 4. PIG Auto Processor
 **Función**: Procesamiento inteligente y filtrado de datos
 - **Tecnología**: Python con integración a scripts PIG
-- **Monitoreo**: Change streams de MongoDB
-- **Destino**: Índice `waze-processed-events` en Elasticsearch
+- **Monitoreo**: Polling activo a MongoDB cada 10 segundos
+- **Destino**: Índice `waze_procesados` en Elasticsearch
 - **Filtros aplicados**:
   - **Por tipo**: Filtra tipos de eventos relevantes
   - **Por zona**: Filtra por comunas de Santiago
@@ -95,8 +97,8 @@ Este documento describe la arquitectura completa del sistema de procesamiento de
 **Función**: Motor de búsqueda y almacenamiento analítico
 - **Tecnología**: Elasticsearch 8.x
 - **Índices**:
-  - `waze-raw-events`: Datos sin procesar
-  - `waze-processed-events`: Datos procesados y filtrados
+  - `waze_bruto`: Datos sin procesar (sincronizados directamente desde MongoDB)
+  - `waze_procesados`: Datos procesados y filtrados (procesados por PIG)
 - **Características**:
   - Mappings optimizados para geo-búsquedas
   - Configuración de single-node
@@ -118,8 +120,8 @@ Este documento describe la arquitectura completa del sistema de procesamiento de
 - **Tecnología**: Kibana 8.x
 - **Conexión**: Directamente a Elasticsearch (puerto 9200)
 - **Características**:
-  - Dashboards comparativos
-  - Index patterns para ambos índices
+  - Dashboards para análisis comparativo entre datos brutos y procesados
+  - Index patterns para `waze_bruto` y `waze_procesados`
   - Geo-visualizaciones
   - Time-series analysis
   - Alerting capabilities
@@ -139,34 +141,32 @@ Scraper (Python)
 MongoDB (waze_data.events)
 ```
 
-### 2. Exportación Raw (MongoDB → Elasticsearch Raw)
+### 2. Sincronización de Datos Brutos (MongoDB → Elasticsearch)
 ```
-MongoDB Change Stream
-    ↓ (Real-time monitoring)
-Raw Exporter (Python)
-    ↓ (Type conversion + Mapping)
-Elasticsearch (waze-raw-events)
+MongoDB (polling cada 15s)
+    ↓ (Connector activo)
+MongoDB-ES Connector
+    ↓ (Conversión mínima + Mapping)
+Elasticsearch (waze_bruto)
 ```
 
-### 3. Procesamiento (MongoDB → Elasticsearch Processed)
+### 3. Procesamiento (MongoDB → Elasticsearch)
 ```
-MongoDB Change Stream
+MongoDB (polling cada 10s)
     ↓ (Real-time monitoring)
 PIG Auto Processor
     ↓ (Filters: Type + Zone + Time + Frequency)
 Enhanced Events
     ↓ (Enrichment + Scoring)
-Elasticsearch (waze-processed-events)
+Elasticsearch (waze_procesados)
 ```
 
 ### 4. Consulta y Visualización
 ```
 Kibana (Frontend)
     ↓ (Elasticsearch API calls)
-Query Cache Service (Proxy:9200)
-    ↓ (Cache check in Redis)
-Redis Cache ←→ Elasticsearch (Backend:9200)
-    ↓ (Results with enhancement)
+Elasticsearch (Backend:9200)
+    ↓ (Results from waze_bruto and waze_procesados)
 Response to Kibana
 ```
 
@@ -178,20 +178,15 @@ Response to Kibana
 - `MONGO_URI`: Conexión a MongoDB
 - `SCRAPE_INTERVAL`: Intervalo de scraping (default: 30s)
 
-**Raw Exporter**:
+**MongoDB-ES Connector**:
 - `MONGO_URI`: Conexión a MongoDB
 - `ES_HOST`: Host de Elasticsearch
-- `INDEX_NAME`: Nombre del índice raw
+- `POLL_INTERVAL`: Intervalo de sincronización (default: 15s)
 
 **PIG Processor**:
 - `MONGO_URI`: Conexión a MongoDB
 - `ES_HOST`: Host de Elasticsearch
 - `FILTERS_CONFIG`: Configuración de filtros
-
-**Query Cache**:
-- `ES_HOST`: Backend Elasticsearch
-- `REDIS_HOST`: Host de Redis
-- `CACHE_TTL`: Time-to-live del caché
 
 ### Configuraciones de Red
 
@@ -200,7 +195,6 @@ Response to Kibana
 - 8081: Mongo Express
 - 8082: Redis Commander
 - 9200: Elasticsearch (directo)
-- 9200: Query Cache Service
 
 **Red Interna**: `my-network` (bridge)
 
@@ -218,13 +212,11 @@ Response to Kibana
 
 **Throughput**:
 - Eventos/minuto ingresados
-- Ratio de exportación (raw/total)
-- Ratio de procesamiento (processed/raw)
+- Ratio de procesamiento (processed/total)
 
 **Latencia**:
-- Tiempo ingesta → raw export
-- Tiempo raw → processed
-- Tiempo de respuesta cache
+- Tiempo ingesta → procesamiento
+- Tiempo de respuesta Elasticsearch
 
 **Calidad**:
 - Eventos con coordenadas válidas
@@ -286,15 +278,12 @@ Todos los servicios implementan logging estructurado:
 ### Estructura de Archivos
 ```
 ├── docker-compose.yml          # Orquestación principal
-├── manage.sh                   # Script de gestión
-├── test_pipeline.sh           # Tests automatizados
 ├── README.md                  # Documentación de usuario
 ├── QUERIES_GUIDE.md           # Guía de consultas
 ├── ARCHITECTURE.md            # Este documento
 ├── scraper/                   # Servicio scraper
-├── raw-exporter/              # Servicio exportador raw
+├── mongo-elasticsearch-connector/ # Conector MongoDB-ES para datos brutos
 ├── pig/                       # Servicio procesador PIG
-├── query-cache/               # Servicio caché
 ├── elasticsearch/             # Configuración ES
 ├── kibana/                    # Configuración Kibana
 ├── mongodb/                   # Configuración MongoDB
@@ -321,16 +310,11 @@ Todos los servicios implementan logging estructurado:
 
 **Sin datos en índices**:
 - Verificar conectividad Scraper → MongoDB
-- Revisar logs de exportadores
+- Revisar logs del procesador PIG
 - Verificar change streams activos
 
-**Caché no funciona**:
-- Verificar conectividad Redis
-- Revisar TTL configuration
-- Verificar logs del proxy
-
 **Kibana no conecta**:
-- Verificar Query Cache Service activo
+- Verificar Elasticsearch activo
 - Verificar configuración elasticsearch.hosts
 - Revisar health checks
 

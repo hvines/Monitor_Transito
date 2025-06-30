@@ -86,6 +86,21 @@ services:
     networks:
         - my-network
 
+  mongo-elastic-puente:
+    build:
+      context: ./mongo-elastic-puente
+      dockerfile: Dockerfile
+    container_name: mongo-elastic-puente
+    restart: unless-stopped
+    depends_on:
+      - mongodb
+      - elasticsearch
+    environment:
+      MONGO_URI: "mongodb://root:example@mongodb:27017/?authSource=admin"
+      ES_HOST: "elasticsearch:9200"
+    networks:
+      - my-network
+
   pig:
     build:
       context: ./pig
