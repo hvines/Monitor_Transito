@@ -69,19 +69,18 @@ class PigAutoProcessorService:
     def setup_elasticsearch_index(self):
         """Configurar el índice de Elasticsearch para datos procesados"""
         try:
-            # Mapping para el índice procesado
+            # Mapping para el índice procesado con los 3 FILTROS PIG
             mapping = {
                 "mappings": {
                     "properties": {
+                        # Campos originales de MongoDB
                         "mongo_id": {"type": "keyword"},
                         "country": {"type": "keyword"},
                         "city": {"type": "keyword"},
                         "street": {"type": "text"},
                         "type": {"type": "keyword"},
                         "subtype": {"type": "keyword"},
-                        "location": {
-                            "type": "geo_point"
-                        },
+                        "location": {"type": "geo_point"},
                         "pubMillis": {"type": "date"},
                         "source_timestamp": {"type": "date"},
                         "ingestion_timestamp": {"type": "date", "format": "strict_date_optional_time||epoch_millis"},
@@ -92,12 +91,38 @@ class PigAutoProcessorService:
                         "reportBy": {"type": "keyword"},
                         "uuid": {"type": "keyword"},
                         "id": {"type": "keyword"},
-                        # Campos procesados
-                        "processing_filters_applied": {"type": "keyword"},
-                        "event_priority": {"type": "keyword"},
-                        "location_zone": {"type": "keyword"},
-                        "time_category": {"type": "keyword"},
-                        "frequency_score": {"type": "float"}
+                        
+                        # ===== 3 FILTROS PIG =====
+                        # FILTRO 1: EVENTOS
+                        "pig_event_filter": {
+                            "type": "object",
+                            "properties": {
+                                "tipo": {"type": "keyword"},
+                                "subtipo": {"type": "keyword"},
+                                "prioridad": {"type": "keyword"}
+                            }
+                        },
+                        
+                        # FILTRO 2: UBICACIÓN
+                        "pig_location_filter": {
+                            "type": "object",
+                            "properties": {
+                                "ciudad": {"type": "keyword"},
+                                "zona": {"type": "keyword"}
+                            }
+                        },
+                        
+                        # FILTRO 3: TIEMPO
+                        "pig_time_filter": {
+                            "type": "object",
+                            "properties": {
+                                "categoria_dia": {"type": "keyword"},
+                                "dia_semana": {"type": "keyword"},
+                                "hora": {"type": "integer"},
+                                "fecha": {"type": "date", "format": "yyyy-MM-dd"},
+                                "timestamp_chile": {"type": "date"}
+                            }
+                        }
                     }
                 },
                 "settings": {
@@ -106,12 +131,31 @@ class PigAutoProcessorService:
                 }
             }
             
-            # Crear índice si no existe
-            if not self.es_client.indices.exists(index=self.PROCESSED_INDEX):
+            # Crear índice si no existe O recrearlo si cambió la estructura
+            index_exists = self.es_client.indices.exists(index=self.PROCESSED_INDEX)
+            
+            if index_exists:
+                logger.info(f"Índice {self.PROCESSED_INDEX} ya existe - verificando estructura...")
+                # Obtener mapping actual
+                try:
+                    current_mapping = self.es_client.indices.get_mapping(index=self.PROCESSED_INDEX)
+                    current_props = current_mapping[self.PROCESSED_INDEX]['mappings'].get('properties', {})
+                    
+                    # Verificar si tiene la nueva estructura de filtros PIG
+                    if 'pig_event_filter' not in current_props:
+                        logger.info(f"Recreando índice {self.PROCESSED_INDEX} con nueva estructura de filtros PIG...")
+                        self.es_client.indices.delete(index=self.PROCESSED_INDEX)
+                        self.es_client.indices.create(index=self.PROCESSED_INDEX, body=mapping)
+                        logger.info(f"Índice {self.PROCESSED_INDEX} recreado con nueva estructura")
+                    else:
+                        logger.info(f"Índice {self.PROCESSED_INDEX} ya tiene la estructura correcta")
+                        
+                except Exception as e:
+                    logger.warning(f"Error verificando estructura del índice: {e}")
+                    logger.info(f"Índice {self.PROCESSED_INDEX} existe pero usaremos estructura actual")
+            else:
                 self.es_client.indices.create(index=self.PROCESSED_INDEX, body=mapping)
                 logger.info(f"Índice {self.PROCESSED_INDEX} creado correctamente")
-            else:
-                logger.info(f"Índice {self.PROCESSED_INDEX} ya existe")
                 
         except Exception as e:
             logger.error(f"Error configurando índice Elasticsearch: {e}")
@@ -139,80 +183,119 @@ class PigAutoProcessorService:
         return chile_time
 
     def apply_pig_filters(self, mongo_doc):
-        """Aplicar filtros y procesamiento tipo PIG al documento"""
+        """Aplicar filtros y procesamiento tipo PIG al documento - 3 FILTROS PRINCIPALES"""
         try:
-            # Crear copia del documento para procesamiento
+            # IMPORTANTE: Crear copia LIMPIA del documento raw de MongoDB
+            # NO modificamos el documento original de MongoDB, solo creamos una copia procesada
             processed_doc = dict(mongo_doc)
             
-            # 1. FILTRO POR TIPO - Clasificar por prioridad
+            # VERIFICACIÓN: El documento de MongoDB debe ser RAW (sin campos procesados)
+            raw_fields_check = [
+                'pig_event_filter', 'pig_location_filter', 'pig_time_filter'
+            ]
+            for field in raw_fields_check:
+                if field in mongo_doc:
+                    logger.warning(f"ATENCIÓN: Campo procesado '{field}' encontrado en documento RAW de MongoDB. ID: {mongo_doc.get('_id', 'Unknown')}")
+            
+            # LOG para debug: mostrar que estamos procesando datos RAW
+            logger.debug(f"Procesando documento RAW desde MongoDB. Campos originales: {list(mongo_doc.keys())}")
+            
+            # =================================================================
+            # FILTRO 1: EVENTOS (tipo + subtipo + prioridad)
+            # =================================================================
             event_type = processed_doc.get('type', '').upper()
             subtype = processed_doc.get('subtype', '').upper()
             
+            # Mapeo de prioridades basado en tipo
             priority_map = {
-                'ACCIDENT': 'HIGH',
-                'HAZARD': 'MEDIUM',
-                'JAM': 'LOW',
-                'ROAD_CLOSED': 'HIGH',
-                'CONSTRUCTION': 'MEDIUM'
+                'ACCIDENT': 'ALTA',
+                'HAZARD': 'MEDIA', 
+                'JAM': 'BAJA',
+                'ROAD_CLOSED': 'ALTA',
+                'CONSTRUCTION': 'MEDIA',
+                'POLICE': 'MEDIA',
+                'WEATHERHAZARD': 'ALTA'
             }
-            processed_doc['event_priority'] = priority_map.get(event_type, 'LOW')
             
-            # 2. FILTRO POR UBICACIÓN - Zonificación
+            processed_doc['pig_event_filter'] = {
+                'tipo': event_type,
+                'subtipo': subtype,
+                'prioridad': priority_map.get(event_type, 'BAJA')
+            }
+            
+            # =================================================================
+            # FILTRO 2: UBICACIÓN (ciudad + zona)
+            # =================================================================
+            city = processed_doc.get('city', 'UNKNOWN')
+            
+            location_filter = {
+                'ciudad': city,
+                'zona': 'UNKNOWN'
+            }
+            
             if 'location' in processed_doc:
                 location = processed_doc['location']
                 if isinstance(location, dict) and 'y' in location and 'x' in location:
                     lat, lon = location['y'], location['x']
                     
-                    # Zonificación básica de Santiago
-                    if lat > -33.45:
-                        zone = "Norte"
-                    elif lat < -33.55:
-                        zone = "Sur"
+                    # Zonificación de Santiago (más específica)
+                    if city.upper() == 'SANTIAGO' or city.upper() == 'CHILE':
+                        if lat > -33.42:
+                            zona = "Santiago-Norte"
+                        elif lat < -33.58:
+                            zona = "Santiago-Sur" 
+                        else:
+                            zona = "Santiago-Centro"
+                            
+                        if lon < -70.68:
+                            zona += "-Oeste"
+                        elif lon > -70.55:
+                            zona += "-Este"
+                        else:
+                            zona += "-Centro"
                     else:
-                        zone = "Centro"
+                        zona = f"{city}-Nearby"
                         
-                    if lon < -70.65:
-                        zone += "-Oeste"
-                    elif lon > -70.60:
-                        zone += "-Este"
-                    else:
-                        zone += "-Centro"
-                        
-                    processed_doc['location_zone'] = zone
+                    location_filter['zona'] = zona
             
-            # 3. FILTRO POR TIEMPO - Categorización temporal
+            processed_doc['pig_location_filter'] = location_filter
+            
+            # =================================================================
+            # FILTRO 3: TIEMPO (categoría + intervalos)
+            # =================================================================
             now_chile = self.get_chile_timestamp()
-            hour = now_chile.hour
             
+            # Subcategoría 1: Categorización del día
+            hour = now_chile.hour
             if 6 <= hour < 10:
-                time_cat = "Mañana-Peak"
+                time_cat = "Mañana"
             elif 10 <= hour < 16:
                 time_cat = "Día"
             elif 16 <= hour < 20:
-                time_cat = "Tarde-Peak"
+                time_cat = "Tarde"
             elif 20 <= hour < 24:
                 time_cat = "Noche"
             else:
                 time_cat = "Madrugada"
-                
-            processed_doc['time_category'] = time_cat
             
-            # 4. ANÁLISIS DE FRECUENCIA - Score basado en thumbs up y comentarios
-            thumbs_up = processed_doc.get('nThumbsUp', 0)
-            comments = processed_doc.get('nComments', 0)
-            reliability = processed_doc.get('reliability', 1)
+            # Subcategoría 2: Intervalos para filtrado
+            weekday = now_chile.strftime('%A')  # Monday, Tuesday, etc.
+            day_name_spanish = {
+                'Monday': 'Lunes', 'Tuesday': 'Martes', 'Wednesday': 'Miércoles',
+                'Thursday': 'Jueves', 'Friday': 'Viernes', 'Saturday': 'Sábado', 'Sunday': 'Domingo'
+            }
             
-            # Calcular score de frecuencia
-            frequency_score = (thumbs_up * 2 + comments * 1.5 + reliability * 0.5) / 10
-            processed_doc['frequency_score'] = min(frequency_score, 10.0)  # Cap a 10
+            processed_doc['pig_time_filter'] = {
+                'categoria_dia': time_cat,
+                'dia_semana': day_name_spanish.get(weekday, weekday),
+                'hora': hour,
+                'fecha': now_chile.strftime('%Y-%m-%d'),
+                'timestamp_chile': now_chile.isoformat()
+            }
             
-            # 5. Registrar filtros aplicados
-            filters_applied = ["type_priority", "location_zone", "time_category", "frequency_analysis"]
-            processed_doc['processing_filters_applied'] = filters_applied
-            
-            # 6. Agregar timestamp de procesamiento en Chile (para análisis local)
-            now_chile = self.get_chile_timestamp()
-            processed_doc['chile_processed_at'] = now_chile.isoformat()
+            # LOG para debug: confirmar que agregamos campos procesados solo a la copia
+            added_fields = ['pig_event_filter', 'pig_location_filter', 'pig_time_filter']
+            logger.debug(f"Campos PIG agregados: {added_fields}")
             
             return processed_doc
             
@@ -348,6 +431,38 @@ class PigAutoProcessorService:
             logger.error(f"Error procesando documentos: {e}")
             return 0
 
+    def validate_mongodb_raw_data(self):
+        """Validar que MongoDB contenga solo datos RAW (sin campos procesados)"""
+        try:
+            logger.info("Validando que MongoDB contenga solo datos RAW...")
+            
+            # Campos PIG nuevos (3 filtros principales)
+            processed_fields = [
+                'pig_event_filter', 'pig_location_filter', 'pig_time_filter'
+            ]
+            
+            # Buscar documentos que contengan campos procesados
+            for field in processed_fields:
+                count = self.collection.count_documents({field: {"$exists": True}})
+                if count > 0:
+                    logger.error(f"¡PROBLEMA! MongoDB contiene {count} documentos con campo procesado '{field}'")
+                    logger.error("MongoDB debe contener SOLO datos RAW. Los campos procesados van únicamente a Elasticsearch.")
+                    return False
+                    
+            logger.info("✅ MongoDB contiene solo datos RAW (correcto)")
+            
+            # Mostrar ejemplo de documento RAW de MongoDB
+            sample_doc = self.collection.find_one()
+            if sample_doc:
+                sample_fields = list(sample_doc.keys())
+                logger.info(f"Campos en documento RAW de ejemplo: {sample_fields}")
+                
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error validando datos RAW en MongoDB: {e}")
+            return False
+
     def run_processing_cycle(self):
         """Ejecutar un ciclo de procesamiento"""
         start_time = time.time()
@@ -360,6 +475,11 @@ class PigAutoProcessorService:
                     logger.info(f"Continuando procesamiento desde ID: {self.last_processed_id}")
                 else:
                     logger.info("Iniciando procesamiento desde el principio")
+            
+            # Validar datos RAW en MongoDB
+            if not self.validate_mongodb_raw_data():
+                logger.error("Deteniendo procesamiento por datos NO RAW en MongoDB")
+                return
             
             # Procesar y exportar documentos nuevos
             processed_count = self.process_and_export_documents()
@@ -377,9 +497,21 @@ class PigAutoProcessorService:
     def run(self):
         """Ejecutar el servicio de procesamiento en modo continuo"""
         logger.info("Iniciando PIG Auto Processor Service...")
-        logger.info(f"Monitoreando MongoDB → Procesamiento PIG → Elasticsearch ({self.PROCESSED_INDEX})")
+        logger.info("=" * 80)
+        logger.info("ARQUITECTURA DEL SISTEMA:")
+        logger.info("1. Scraper → MongoDB (datos RAW sin procesar)")
+        logger.info("2. MongoDB → Elasticsearch (índice 'waze_bruto' - datos RAW)")
+        logger.info("3. PIG Processor → Elasticsearch (índice 'waze_procesados' - datos con 3 filtros)")
+        logger.info("")
+        logger.info("🔍 FILTROS PIG APLICADOS:")
+        logger.info("   1️⃣  EVENTOS: tipo + subtipo + prioridad")
+        logger.info("   2️⃣  UBICACIÓN: ciudad + zona geográfica")
+        logger.info("   3️⃣  TIEMPO: categoría del día + intervalos (día, hora, fecha)")
+        logger.info("=" * 80)
+        logger.info(f"MongoDB → Procesamiento PIG → Elasticsearch ({self.PROCESSED_INDEX})")
         logger.info(f"Intervalo de polling: {self.POLL_INTERVAL}s")
         logger.info(f"Timezone: Chile (UTC-4/UTC-3)")
+        logger.info("NOTA: PIG solo LEE de MongoDB y ESCRIBE a Elasticsearch. NO modifica MongoDB.")
         
         while self.running:
             try:
