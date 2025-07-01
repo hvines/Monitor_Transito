@@ -1,50 +1,47 @@
-# Tarea 1
+# Sistema de Procesamiento de Eventos de Tráfico Waze
 
-# Descripción general
+## Descripción General
 
-Este proyecto despliega, mediante Docker Compose, un flujo de procesamiento de eventos de tráfico extraídos de la API de Waze:
-1.	Scraper: obtiene los últimos eventos de la zona de Santiago cada segundo y los almacena en MongoDB.
-2.	MongoDB: base de datos NoSQL que almacena dichos eventos para luego pasar a su sistema de caché.
-3.	Caché (Redis): almacena el último lote de eventos durante 10 segundos para consultas rápidas.
-4.	Generador de tráfico: simula llegadas de eventos con dos distribuciones (determinista y Poisson).
-5.	Visores para administración: mongo-express en el puerto 8081 y redis-commander en el 8082.
+Este proyecto despliega un procesamiento de eventos de tráfico extraídos de la API de Waze para la zona de Santiago, Chile. El sistema consta de los siguientes componentes:
 
-Cabe mencionar que el presente fue diseñado en un sistema con macOS 14.4.3.
+1. **Scraper**: Obtiene eventos de tráfico en tiempo real de la API de Waze y los almacena en MongoDB
+2. **MongoDB**: Base de datos NoSQL que almacena los eventos capturados del scraper
+3. **Mongo-Elastic-Puente**: Sincroniza datos brutos desde MongoDB hacia Elasticsearch
+4. **PIG**: Servicio de filtrado y procesamiento de datos desde MongoDB hacia Elasticsearch
+5. **Elasticsearch**: Motor de búsqueda con dos índices: `waze_bruto` (datos sin procesar) y `waze_procesados` (datos filtrados)
+6. **Redis**: Sistema de caché para optimizar consultas
+7. **Kibana**: Interfaz web para visualización y análisis comparativo de datos brutos vs procesados
+
+## Instrucciones de Arranque
+
+### Iniciar el Sistema
+1. Descargar el repositorio
+2. Ejecutar desde la raíz del proyecto:
+
+```bash
+
+docker-compose up -d --build
+
+docker-compose ps
+```
+
+### Acceso a los Servicios
+- **Kibana** → http://localhost:5601 (Visualización de datos)
+- **Mongo Express** → http://localhost:8081 (Administrador de MongoDB)
+- **Redis Commander** → http://localhost:8082 (Administrador de Redis)
 
 
-# Instrucciones de arranque
-1.	Clonar o descargar el repositorio.	
-2.	Ejecutar:
+**Nota**: Elasticsearch tarda 30 segundos en inicializar completamente.
 
-    ```powershell
+## Detener el Sistema
+
+```bash
+docker-compose down
+
+docker-compose down --volumes
+docker-compose down --volumes --remove-orphans
+```
+
+
+
     
-	docker-compose down --volumes  # limpia datos previos
-	docker-compose up -d          # construye y arranca todos los servicios
-
-    ```
-
-
-3.	Verificar servicios corriendo:
-
-    ```powershell
-
-	docker-compose ps
-	
- 	```
- 
-4.	Acceder a los visores:
-
-   
-	Mongo Express → http://localhost:8081 y Redis Commander → http://localhost:8082
-
-# Explicación de parámetros de distribución
- 
- ```powershell
-    
-EVENTS_PER_SEC	traffic-generator	Tasa media de generación de eventos por segundo (evt/s).
-DISTRIBUTION	traffic-generator	Distribución de llegadas: deterministic o poisson.	
-
- ```
-Existe un parametro para una distribución tanto determinista como poisson.
-Por defecto está en poisson, pero cambiarlo a determinista, es sólo cambiar la linea 30 del generator.py a "deterministic".
-

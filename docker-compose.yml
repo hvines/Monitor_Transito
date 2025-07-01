@@ -1,12 +1,17 @@
-# version: '3.8'
-
 services:
   mongodb:
     image: mongo:6.0
-    restart: always
+    container_name: mongodb
+    restart: unless-stopped
     environment:
       MONGO_INITDB_ROOT_USERNAME: root
       MONGO_INITDB_ROOT_PASSWORD: example
+    #healthcheck:
+      #test: >
+        #CMD-SHELL mongosh --username root --password example --authenticationDatabase admin --eval "db.adminCommand('ping')" --quiet
+      #interval: 5s
+      #timeout: 5s
+      #retries: 5
     volumes:
       - mongo_data:/data/db
     networks:
@@ -16,28 +21,36 @@ services:
 
   mongo-express:
     image: mongo-express:latest
-    restart: always
+    container_name: mongo-express
+    restart: unless-stopped
+
     depends_on:
-     - mongodb
+      - mongodb
     environment:
       ME_CONFIG_BASICAUTH: 'false'  
-      ME_CONFIG_MONGODB_ADMINUSERNAME: admin
-      ME_CONFIG_MONGODB_ADMINPASSWORD: admin123
+      ME_CONFIG_MONGODB_ADMINUSERNAME: root
+      ME_CONFIG_MONGODB_ADMINPASSWORD: example
       ME_CONFIG_MONGODB_URL: mongodb://root:example@mongodb:27017/?authSource=admin
     ports:
       - "8081:8081"
     networks:
       - my-network
 
+
   redis-commander:
     image: rediscommander/redis-commander:latest
     platform: linux/amd64
-    restart: always
+    container_name: redis-commander
+    restart: unless-stopped
     depends_on:
-      redis:
-        condition: service_healthy
+      - redis
     environment:
-      REDIS_HOSTS: local:redis:6379
+      REDIS_HOSTS: local:redis-cache:6379
+      NO_LOG_DATA: "true"
+      REDIS_CONNECTION_TIMEOUT: 5000
+      REDIS_COMMAND_TIMEOUT: 5000
+      READ_ONLY: "false"
+      USE_SCAN: "true"
     ports:
       - "8082:8081"
     networks:
@@ -45,45 +58,128 @@ services:
 
 
   redis:
-      image: redis:7.0
-      restart: always
-      ports:
-        - "6379:6379"
-      networks:
-        - my-network
-      healthcheck:
-        test: ["CMD", "redis-cli", "ping"]
-        interval: 10s
-        timeout: 5s
-        retries: 5
-
-  waze-scraper:
-      build: ./scraper
-      depends_on:
-        - mongodb
-        - redis
-      environment:
-        MONGO_URI: "mongodb://root:example@mongodb:27017/?authSource=admin"
-        REDIS_HOST: redis
-      networks:
-        - my-network
-
-  traffic-generator:
     build:
-      context: ./traffic-generator
-    container_name: traffic_generator
-    depends_on:
-      - waze-scraper
-    environment:
-      GENERATOR_API_URL: http://waze-scraper:5000/ingest
-      EVENTS_PER_SEC: 10
-      DISTRIBUTION: poisson
+      context: ./redis
+      dockerfile: Dockerfile
+    container_name: redis-cache
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
     networks:
       - my-network
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  waze-scraper:
+    build:
+      context: ./scraper
+      dockerfile: Dockerfile
+    container_name: waze-scraper
+    restart: unless-stopped
+    depends_on:
+        - mongodb
+    environment:
+        MONGO_URI: "mongodb://root:example@mongodb:27017/?authSource=admin"
+    networks:
+        - my-network
+
+  mongo-elastic-puente:
+    build:
+      context: ./mongo-elastic-puente
+      dockerfile: Dockerfile
+    container_name: mongo-elastic-puente
+    restart: unless-stopped
+    depends_on:
+      - mongodb
+      - elasticsearch
+    environment:
+      MONGO_URI: "mongodb://root:example@mongodb:27017/?authSource=admin"
+      ES_HOST: "elasticsearch:9200"
+    networks:
+      - my-network
+
+  pig:
+    build:
+      context: ./pig
+      dockerfile: Dockerfile
+    image: pig_auto_processor:latest
+    container_name: pig-auto-processor
+    restart: unless-stopped
+    depends_on:
+      - mongodb
+      - elasticsearch
+    environment:
+      MONGO_URI: "mongodb://root:example@mongodb:27017/?authSource=admin"
+      ES_HOST: "elasticsearch:9200"
+    volumes:
+      - pig_output:/data/processed
+    networks:
+      - my-network  
+
+  elasticsearch:
+    build:
+      context: ./elasticsearch
+      dockerfile: Dockerfile
+    container_name: elasticsearch
+    restart: unless-stopped
+    environment:
+      - node.name=elasticsearch
+      - cluster.name=waze-cluster
+      - discovery.type=single-node
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+      - xpack.security.enabled=false
+      - xpack.security.enrollment.enabled=false
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    networks:
+      - my-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  kibana:
+    build:
+      context: ./kibana
+      dockerfile: Dockerfile
+    container_name: kibana
+    restart: unless-stopped
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+      - xpack.security.enabled=false
+    ports:
+      - "5601:5601"
+    networks:
+      - my-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:5601/api/status || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      
 
 volumes:
   mongo_data:
   redis_data:
+  mongo_export:
+  pig_data_raw:
+  pig_data_processed:
+  pig_output:
+  pig_logs:
+  pig_scripts:
+  elasticsearch_data:
 
 networks:
   my-network:

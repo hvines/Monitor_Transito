@@ -1,71 +1,300 @@
-import requests  # type: ignore
-import json
-import os
+import requests
 import time
-from pymongo import MongoClient, errors, ASCENDING  # type: ignore
-from datetime import datetime
-from redis import Redis  # type: ignore
+import json
+import logging
+from pymongo import MongoClient
+from datetime import datetime, timedelta, timezone
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import signal
+import sys
+import pytz
 
-redis_host = os.environ.get("REDIS_HOST", "redis")
-cache = Redis(host=redis_host, port=6379, db=0)
+# Configuración de logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
+class WazeScraperService:
+    def __init__(self):
+        # Configuración
+        self.WAZE_API_URL = "https://www.waze.com/row-RoutingManager/routingRequest"
+        self.SANTIAGO_BBOX = {
+            'left': -70.75,   # Área más pequeña, centrada en Santiago
+            'bottom': -33.6,
+            'right': -70.55,
+            'top': -33.4
+        }
+        self.MAX_REQUESTS_PER_CYCLE = 5  # Reducir a 5 requests por ciclo
+        self.SYNC_TIMEOUT = 30  # segundos
+        self.CYCLE_INTERVAL = 30  # reducir a 30 segundos entre ciclos
+        self.CACHE_TTL = 10  # TTL de 10 segundos para latest_alerts
+        
+        # Configurar timezone de Santiago
+        self.santiago_tz = pytz.timezone('America/Santiago')  # UTC-4 en horario estándar, UTC-3 en horario de verano
+        
+        # Conexiones
+        self.setup_connections()
+        
+        # Control de estado
+        self.running = True
+        self.setup_signal_handlers()
 
-mongo_uri = os.environ.get("MONGO_URI")
-if not mongo_uri:
-    raise ValueError("La variable de entorno MONGO_URI no está definida.")
+    def setup_connections(self):
+        """Configurar conexión a MongoDB"""
+        try:
+            # MongoDB con autenticación
+            self.mongo_client = MongoClient('mongodb://root:example@mongodb:27017/?authSource=admin')
+            self.db = self.mongo_client.waze_db
+            self.collection = self.db.events
+            
+            logger.info("Conexión a MongoDB establecida correctamente")
+        except Exception as e:
+            logger.error(f"Error estableciendo conexión a MongoDB: {e}")
+            raise
 
-client = MongoClient(mongo_uri)
-db = client["waze_alertas"]
-coleccion = db["eventos"]
+    def setup_signal_handlers(self):
+        """Configurar manejadores de señales para shutdown limpio"""
+        signal.signal(signal.SIGTERM, self.shutdown)
+        signal.signal(signal.SIGINT, self.shutdown)
 
+    def convert_to_santiago_timezone(self, utc_datetime):
+        """Convertir datetime UTC a timezone de Santiago"""
+        try:
+            if utc_datetime.tzinfo is None:
+                # Asumir que es UTC si no tiene timezone info
+                utc_datetime = utc_datetime.replace(tzinfo=pytz.UTC)
+            elif utc_datetime.tzinfo != pytz.UTC:
+                # Convertir a UTC primero si tiene otro timezone
+                utc_datetime = utc_datetime.astimezone(pytz.UTC)
+            
+            # Convertir a timezone de Santiago
+            santiago_datetime = utc_datetime.astimezone(self.santiago_tz)
+            
+            # Retornar como datetime naive (sin timezone info) en hora local de Santiago
+            return santiago_datetime.replace(tzinfo=None)
+            
+        except Exception as e:
+            logger.warning(f"Error convirtiendo timestamp a timezone Santiago: {e}")
+            return utc_datetime
 
-result = coleccion.delete_many({})
-print(f"🗑️  Documentos eliminados al inicio: {result.deleted_count}", flush=True)
+    def shutdown(self, signum, frame):
+        """Shutdown limpio del servicio"""
+        logger.info("Iniciando shutdown del scraper...")
+        self.running = False
 
+    def scrape_waze_events(self):
+        """Extraer eventos de Waze con límite conservador de requests"""
+        events = []
+        requests_made = 0
+        
+        try:
+            # Headers para simular un navegador real
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'application/json, text/plain, */*',
+                'Accept-Language': 'es-ES,es;q=0.9,en;q=0.8',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'Referer': 'https://www.waze.com/',
+                'DNT': '1',
+                'Connection': 'keep-alive',
+                'Sec-Fetch-Dest': 'empty',
+                'Sec-Fetch-Mode': 'cors',
+                'Sec-Fetch-Site': 'same-origin',
+            }
+            
+            # Endpoint simplificado de Waze
+            alerts_url = "https://www.waze.com/live-map/api/georss"
+            
+            logger.info(f"Iniciando scraping de Waze (máximo {self.MAX_REQUESTS_PER_CYCLE} requests)")
+            
+            # Hacer solo unos pocos requests por ciclo para evitar rate limiting
+            for attempt in range(self.MAX_REQUESTS_PER_CYCLE):
+                if not self.running:
+                    break
+                    
+                try:
+                    # Parámetros más específicos para reducir carga
+                    params = {
+                        'left': self.SANTIAGO_BBOX['left'],
+                        'bottom': self.SANTIAGO_BBOX['bottom'], 
+                        'right': self.SANTIAGO_BBOX['right'],
+                        'top': self.SANTIAGO_BBOX['top'],
+                        'env': 'row',
+                        'types': 'alerts'  # Solo alertas, no otras categorías
+                    }
+                    
+                    response = requests.get(alerts_url, params=params, headers=headers, timeout=20)
+                    requests_made += 1
+                    
+                    if response.status_code == 200:
+                        try:
+                            data = response.json()
+                            if 'alerts' in data and data['alerts']:
+                                # Almacenar eventos tal como los recibe la API
+                                raw_events = data['alerts']
+                                
+                                # Procesar eventos con conversión de timezone
+                                processed_events = []
+                                for event in raw_events:
+                                    # Crear copia del evento original
+                                    processed_event = dict(event)
+                                    
+                                    # Convertir timestamps a timezone de Santiago
+                                    now_utc = datetime.utcnow().replace(tzinfo=pytz.UTC)
+                                    processed_at_santiago = self.convert_to_santiago_timezone(now_utc)
+                                    processed_event['_processed_at'] = processed_at_santiago
+                                    
+                                    # Convertir pubMillis si existe (timestamp en milisegundos)
+                                    if 'pubMillis' in event:
+                                        try:
+                                            pub_timestamp_utc = datetime.fromtimestamp(event['pubMillis'] / 1000, tz=pytz.UTC)
+                                            pub_timestamp_santiago = self.convert_to_santiago_timezone(pub_timestamp_utc)
+                                            processed_event['pubMillis_santiago'] = pub_timestamp_santiago.isoformat()
+                                        except Exception as e:
+                                            logger.warning(f"Error convirtiendo pubMillis: {e}")
+                                    
+                                    # Convertir timestamps de comentarios si existen
+                                    if 'comments' in event and isinstance(event['comments'], list):
+                                        for comment in processed_event['comments']:
+                                            if 'reportMillis' in comment:
+                                                try:
+                                                    comment_timestamp_utc = datetime.fromtimestamp(comment['reportMillis'] / 1000, tz=pytz.UTC)
+                                                    comment_timestamp_santiago = self.convert_to_santiago_timezone(comment_timestamp_utc)
+                                                    comment['reportMillis_santiago'] = comment_timestamp_santiago.isoformat()
+                                                except Exception as e:
+                                                    logger.warning(f"Error convirtiendo comentario timestamp: {e}")
+                                    
+                                    processed_events.append(processed_event)
+                                
+                                events.extend(processed_events)
+                                logger.info(f"Request {requests_made}: {len(processed_events)} eventos obtenidos de Waze")
+                                
+                                # Log de estructura para análisis (solo el primer evento)
+                                if processed_events and requests_made == 1:
+                                    logger.info(f"Estructura original de evento Waze: {json.dumps(processed_events[0], indent=2, default=str)[:500]}...")
+                                
+                                # Si obtuvimos eventos, no necesitamos hacer más requests
+                                if len(processed_events) > 0:
+                                    break
+                            else:
+                                logger.info(f"Request {requests_made}: No hay alertas activas en este momento")
+                                
+                        except json.JSONDecodeError as e:
+                            logger.warning(f"Request {requests_made}: Error parseando JSON: {e}")
+                    
+                    elif response.status_code == 429:
+                        logger.warning(f"Rate limit alcanzado en request {requests_made}, terminando ciclo")
+                        break
+                    
+                    elif response.status_code == 500:
+                        logger.warning(f"Request {requests_made}: Server error 500, reintentando con pausa más larga")
+                        time.sleep(10)  # Pausa más larga para server errors
+                        
+                    else:
+                        logger.warning(f"Request {requests_made} falló con código: {response.status_code}")
+                    
+                    # Pausa más larga entre requests para ser más respetuosos
+                    if attempt < self.MAX_REQUESTS_PER_CYCLE - 1:
+                        time.sleep(5)
+                    
+                except requests.exceptions.Timeout:
+                    logger.warning(f"Request {requests_made}: Timeout, continuando...")
+                    time.sleep(3)
+                    
+                except requests.exceptions.RequestException as e:
+                    logger.error(f"Request {requests_made}: Error de conexión: {e}")
+                    time.sleep(5)
+                    
+        except Exception as e:
+            logger.error(f"Error durante scraping: {e}")
+        
+        logger.info(f"Scraping completado: {len(events)} eventos totales, {requests_made} requests realizados")
+        return events
 
-if "uuid_1" not in coleccion.index_information():
-    coleccion.create_index([("uuid", ASCENDING)], unique=True, sparse=True)
+    def store_events_mongodb(self, events):
+        """Almacenar eventos en MongoDB con timeout"""
+        if not events:
+            return 0
+            
+        try:
+            logger.info(f"Almacenando {len(events)} eventos en MongoDB...")
+            start_time = time.time()
+            
+            # Inserción con timeout
+            result = self.collection.insert_many(events, ordered=False)
+            
+            elapsed_time = time.time() - start_time
+            if elapsed_time > self.SYNC_TIMEOUT:
+                logger.warning(f"Almacenamiento en MongoDB tomó {elapsed_time:.2f}s (>{self.SYNC_TIMEOUT}s)")
+            
+            logger.info(f"MongoDB: {len(result.inserted_ids)} eventos almacenados en {elapsed_time:.2f}s")
+            return len(result.inserted_ids)
+            
+        except Exception as e:
+            logger.error(f"Error almacenando en MongoDB: {e}")
+            return 0
 
+    def synchronized_data_pipeline(self, events):
+        """Pipeline sincronizado solo para MongoDB"""
+        logger.info("Iniciando pipeline para MongoDB...")
+        
+        # Solo almacenar en MongoDB - Redis será manejado por el query cache
+        mongodb_result = self.store_events_mongodb(events)
+        logger.info(f"Pipeline completado: {mongodb_result} eventos almacenados en MongoDB")
+        
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            # Ejecutar MongoDB y Redis en paralelo
+            mongodb_future = executor.submit(self.store_events_mongodb, events)
+            redis_future = executor.submit(self.update_redis_cache, events)
+            
+            # Esperar con timeout
+            completed_tasks = 0
+            for future in as_completed([mongodb_future, redis_future], timeout=self.SYNC_TIMEOUT):
+                try:
+                    result = future.result()
+                    completed_tasks += 1
+                except Exception as e:
+                    logger.error(f"Error en pipeline: {e}")
+            
+            logger.info(f"Pipeline completado: {completed_tasks}/2 tareas exitosas")
 
-def job():
-    try:
-        print("Descargando y procesando datos...", flush=True)
+    def run_scraping_cycle(self):
+        """Ejecutar un ciclo completo de scraping"""
+        logger.info("=== Iniciando ciclo de scraping ===")
+        cycle_start = time.time()
+        
+        # 1. Scraping de Waze
+        events = self.scrape_waze_events()
+        
+        if events:
+            # 2. Pipeline sincronizado
+            self.synchronized_data_pipeline(events)
+        else:
+            logger.warning("No se obtuvieron eventos en este ciclo")
+        
+        cycle_time = time.time() - cycle_start
+        logger.info(f"=== Ciclo completado en {cycle_time:.2f}s ===")
 
-        url = (
-            "https://www.waze.com/live-map/api/georss?"
-            "top=-33.3464&bottom=-33.5121&"
-            "left=-70.7404&right=-70.5459&"
-            "env=row&types=alerts,traffic"
-        )
-
-        resp = requests.get(url)
-        if resp.status_code != 200:
-            print(f"Error HTTP {resp.status_code}", flush=True)
-            return  
-
-        data = resp.json()
-        alerts = data.get("alerts", [])
-        print(f"Eventos descargados: {len(alerts)}", flush=True)
-
-        insertados = 0
-        for alert in alerts:
-            alert["timestamp"] = datetime.utcnow()
+    def run(self):
+        """Ejecutar scraper en modo continuo"""
+        logger.info("Iniciando Waze Scraper Service...")
+        
+        while self.running:
             try:
-                coleccion.insert_one(alert)
-                insertados += 1
-            except errors.DuplicateKeyError:
-                pass
+                self.run_scraping_cycle()
+                
+                if self.running:
+                    logger.info(f"Esperando {self.CYCLE_INTERVAL}s para próximo ciclo...")
+                    time.sleep(self.CYCLE_INTERVAL)
+                    
+            except KeyboardInterrupt:
+                break
+            except Exception as e:
+                logger.error(f"Error en ciclo principal: {e}")
+                time.sleep(10)  # Esperar antes de reintentar
+        
+        logger.info("Scraper detenido")
 
-  
-        cache.setex("latest_alerts", 10, json.dumps(alerts, default=str))
-        print("Caché en latest_alerts de Redis por 10s", flush=True)
-
-    except Exception as e:
-        print(f"Error en la iteración: {e}", flush=True)
-
-
-if __name__ == '__main__':
-    while True:
-        job()
-        print("Esperando 1 segundo para más eventos...\n", flush=True)
-        time.sleep(1)
+if __name__ == "__main__":
+    scraper = WazeScraperService()
+    scraper.run()
