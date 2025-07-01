@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-MongoDB to Elasticsearch Connector - Datos Brutos
+MongoDB a Elasticsearch - Datos Brutos
 Conecta directamente MongoDB con Elasticsearch para sincronizar datos brutos
 """
 

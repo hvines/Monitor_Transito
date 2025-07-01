@@ -106,16 +106,16 @@ class MongoDataInspector:
     def print_field_analysis(self, field_stats, total_docs):
         """Imprimir análisis de campos de forma organizada"""
         print("\n" + "="*80)
-        print("📊 ANÁLISIS DE ESTRUCTURA DE DATOS MONGODB")
+        print("ANÁLISIS DE ESTRUCTURA DE DATOS MONGODB")
         print("="*80)
-        print(f"📄 Total de documentos analizados: {total_docs}")
-        print(f"🔍 Campos únicos encontrados: {len(field_stats)}")
+        print(f"Total de documentos analizados: {total_docs}")
+        print(f"Campos únicos encontrados: {len(field_stats)}")
         print("\n")
         
         # Ordenar campos por frecuencia
         sorted_fields = sorted(field_stats.items(), key=lambda x: x[1]['count'], reverse=True)
         
-        print("📋 LISTA DE CAMPOS DISPONIBLES:")
+        print("LISTA DE CAMPOS DISPONIBLES:")
         print("-" * 80)
         
         for field_name, stats in sorted_fields:
@@ -125,17 +125,17 @@ class MongoDataInspector:
             # Información básica del campo
             types_str = ", ".join(stats['types'])
             
-            print(f"\n🔸 Campo: {field_name}")
-            print(f"   📈 Frecuencia: {stats['count']}/{total_docs} ({percentage:.1f}%)")
-            print(f"   🏷️  Tipo(s): {types_str}")
+            print(f"\n• Campo: {field_name}")
+            print(f"   Frecuencia: {stats['count']}/{total_docs} ({percentage:.1f}%)")
+            print(f"   Tipo(s): {types_str}")
             
             if stats['null_count'] > 0:
                 null_percentage = (stats['null_count'] / stats['count']) * 100
-                print(f"   ⚠️  Valores nulos: {stats['null_count']} ({null_percentage:.1f}%)")
+                print(f"   Valores nulos: {stats['null_count']} ({null_percentage:.1f}%)")
             
             # Mostrar valores de muestra
             if stats['sample_values']:
-                print(f"   💡 Valores de muestra:")
+                print(f"   Valores de muestra:")
                 for i, sample in enumerate(stats['sample_values'][:3], 1):
                     print(f"      {i}. {sample}")
             
@@ -144,7 +144,7 @@ class MongoDataInspector:
     def generate_filter_template(self, field_stats):
         """Generar plantilla de configuración de filtros"""
         print("\n" + "="*80)
-        print("⚙️  PLANTILLA DE CONFIGURACIÓN DE FILTROS")
+        print("PLANTILLA DE CONFIGURACIÓN DE FILTROS")
         print("="*80)
         print("# Descomenta los campos que QUIERES MANTENER en el procesamiento")
         print("# Los campos comentados serán FILTRADOS/ELIMINADOS")
@@ -170,11 +170,11 @@ class MongoDataInspector:
                 waze_fields.append(field_name)
         
         categories = [
-            ("🔑 CAMPOS CORE (Identificación básica)", core_fields),
-            ("📍 CAMPOS DE UBICACIÓN", location_fields),
-            ("⏰ CAMPOS TEMPORALES", time_fields),
-            ("🚗 CAMPOS WAZE (Datos de tráfico)", waze_fields),
-            ("🏷️  CAMPOS METADATA", metadata_fields)
+            ("CAMPOS CORE (Identificación básica)", core_fields),
+            ("CAMPOS DE UBICACIÓN", location_fields),
+            ("CAMPOS TEMPORALES", time_fields),
+            ("CAMPOS WAZE (Datos de tráfico)", waze_fields),
+            ("CAMPOS METADATA", metadata_fields)
         ]
         
         filter_config = []
@@ -201,23 +201,23 @@ class MongoDataInspector:
     
     def run_interactive_analysis(self):
         """Ejecutar análisis interactivo"""
-        print("🚀 Iniciando análisis de estructura de datos MongoDB...")
+        print("Iniciando análisis de estructura de datos MongoDB...")
         
         # Verificar que hay datos
         total_count = self.collection.count_documents({})
         if total_count == 0:
-            print("⚠️  No hay documentos en la colección. Asegúrate de que el scraper esté funcionando.")
+            print("No hay documentos en la colección. Asegúrate de que el scraper esté funcionando.")
             return
         
-        print(f"📊 Total de documentos en la colección: {total_count}")
+        print(f"Total de documentos en la colección: {total_count}")
         
         # Obtener muestra
         sample_size = min(100, total_count)
-        print(f"🔍 Analizando muestra de {sample_size} documentos...")
+        print(f"Analizando muestra de {sample_size} documentos...")
         
         documents = self.get_sample_documents(sample_size)
         if not documents:
-            print("❌ No se pudieron obtener documentos para análisis")
+            print("No se pudieron obtener documentos para análisis")
             return
         
         # Analizar estructura
@@ -228,7 +228,7 @@ class MongoDataInspector:
         self.generate_filter_template(field_stats)
         
         print("\n" + "="*80)
-        print("✅ Análisis completado. Usa la plantilla anterior para configurar filtros.")
+        print("Análisis completado. Usa la plantilla anterior para configurar filtros.")
         print("="*80)
 
 if __name__ == "__main__":

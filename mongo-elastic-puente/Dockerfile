@@ -1,4 +1,4 @@
-# MongoDB to Elasticsearch Connector - Datos Brutos
+# MongoDB a Elasticsearch - Datos Brutos
 FROM python:3.11-slim
 
 WORKDIR /app

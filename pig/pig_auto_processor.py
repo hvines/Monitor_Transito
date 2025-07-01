@@ -449,7 +449,7 @@ class PigAutoProcessorService:
                     logger.error("MongoDB debe contener SOLO datos RAW. Los campos procesados van únicamente a Elasticsearch.")
                     return False
                     
-            logger.info("✅ MongoDB contiene solo datos RAW (correcto)")
+            logger.info("MongoDB contiene solo datos RAW (correcto)")
             
             # Mostrar ejemplo de documento RAW de MongoDB
             sample_doc = self.collection.find_one()
@@ -503,10 +503,10 @@ class PigAutoProcessorService:
         logger.info("2. MongoDB → Elasticsearch (índice 'waze_bruto' - datos RAW)")
         logger.info("3. PIG Processor → Elasticsearch (índice 'waze_procesados' - datos con 3 filtros)")
         logger.info("")
-        logger.info("🔍 FILTROS PIG APLICADOS:")
-        logger.info("   1️⃣  EVENTOS: tipo + subtipo + prioridad")
-        logger.info("   2️⃣  UBICACIÓN: ciudad + zona geográfica")
-        logger.info("   3️⃣  TIEMPO: categoría del día + intervalos (día, hora, fecha)")
+        logger.info("FILTROS PIG APLICADOS:")
+        logger.info("   1. EVENTOS: tipo + subtipo + prioridad")
+        logger.info("   2. UBICACIÓN: ciudad + zona geográfica")
+        logger.info("   3. TIEMPO: categoría del día + intervalos (día, hora, fecha)")
         logger.info("=" * 80)
         logger.info(f"MongoDB → Procesamiento PIG → Elasticsearch ({self.PROCESSED_INDEX})")
         logger.info(f"Intervalo de polling: {self.POLL_INTERVAL}s")
