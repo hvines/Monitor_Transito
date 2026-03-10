@@ -2,6 +2,7 @@ import requests
 import time
 import json
 import logging
+import redis
 from pymongo import MongoClient
 from datetime import datetime, timedelta, timezone
 import threading
@@ -27,7 +28,7 @@ class WazeScraperService:
         self.MAX_REQUESTS_PER_CYCLE = 5  # Reducir a 5 requests por ciclo
         self.SYNC_TIMEOUT = 30  # segundos
         self.CYCLE_INTERVAL = 30  # reducir a 30 segundos entre ciclos
-        self.CACHE_TTL = 10  # TTL de 10 segundos para latest_alerts
+        self.CACHE_TTL = 300  # TTL de 300 segundos (5 min) para latest_alerts
         
         # Configurar timezone de Santiago
         self.santiago_tz = pytz.timezone('America/Santiago')  # UTC-4 en horario estándar, UTC-3 en horario de verano
@@ -40,17 +41,28 @@ class WazeScraperService:
         self.setup_signal_handlers()
 
     def setup_connections(self):
-        """Configurar conexión a MongoDB"""
+        """Configurar conexión a MongoDB y Redis"""
         try:
             # MongoDB con autenticación
             self.mongo_client = MongoClient('mongodb://root:example@mongodb:27017/?authSource=admin')
             self.db = self.mongo_client.waze_db
             self.collection = self.db.events
-            
             logger.info("Conexión a MongoDB establecida correctamente")
         except Exception as e:
             logger.error(f"Error estableciendo conexión a MongoDB: {e}")
             raise
+
+        # Redis (no es crítico; si falla, el scraper sigue funcionando)
+        try:
+            self.redis_client = redis.Redis(
+                host='redis-cache', port=6379, db=0,
+                socket_connect_timeout=5, socket_timeout=5
+            )
+            self.redis_client.ping()
+            logger.info("Conexión a Redis establecida correctamente")
+        except Exception as e:
+            logger.warning(f"Redis no disponible, caché desactivada: {e}")
+            self.redis_client = None
 
     def setup_signal_handlers(self):
         """Configurar manejadores de señales para shutdown limpio"""
@@ -234,28 +246,41 @@ class WazeScraperService:
             logger.error(f"Error almacenando en MongoDB: {e}")
             return 0
 
+    def update_redis_cache(self, events):
+        """Cachear la lista completa de eventos bajo la clave 'latest_alerts'"""
+        if not events:
+            return 0
+        if not self.redis_client:
+            logger.warning("Redis no disponible, omitiendo caché")
+            return 0
+        try:
+            self.redis_client.setex(
+                'latest_alerts',
+                self.CACHE_TTL,
+                json.dumps(events, default=str)
+            )
+            logger.info(f"Redis: {len(events)} eventos cacheados bajo 'latest_alerts' (TTL={self.CACHE_TTL}s)")
+            return len(events)
+        except Exception as e:
+            logger.error(f"Error actualizando caché Redis: {e}")
+            return 0
+
     def synchronized_data_pipeline(self, events):
-        """Pipeline sincronizado solo para MongoDB"""
-        logger.info("Iniciando pipeline para MongoDB...")
-        
-        # Solo almacenar en MongoDB - Redis será manejado por el query cache
-        mongodb_result = self.store_events_mongodb(events)
-        logger.info(f"Pipeline completado: {mongodb_result} eventos almacenados en MongoDB")
-        
+        """Pipeline sincronizado: MongoDB y Redis en paralelo"""
+        logger.info("Iniciando pipeline para MongoDB y Redis...")
+
         with ThreadPoolExecutor(max_workers=2) as executor:
-            # Ejecutar MongoDB y Redis en paralelo
             mongodb_future = executor.submit(self.store_events_mongodb, events)
             redis_future = executor.submit(self.update_redis_cache, events)
-            
-            # Esperar con timeout
+
             completed_tasks = 0
             for future in as_completed([mongodb_future, redis_future], timeout=self.SYNC_TIMEOUT):
                 try:
-                    result = future.result()
+                    future.result()
                     completed_tasks += 1
                 except Exception as e:
                     logger.error(f"Error en pipeline: {e}")
-            
+
             logger.info(f"Pipeline completado: {completed_tasks}/2 tareas exitosas")
 
     def run_scraping_cycle(self):
